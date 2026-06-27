@@ -43,6 +43,12 @@ export interface Budget {
   total: number
 }
 
+export interface PlanQuality {
+  score: number
+  warnings: string[]
+  checks: Record<string, boolean>
+}
+
 export interface DayPlan {
   date: string
   day_index: number
@@ -83,4 +89,5 @@ export interface TripPlan {
   weather_info: WeatherInfo[]
   overall_suggestions: string
   budget?: Budget | null
+  quality?: PlanQuality | null
 }

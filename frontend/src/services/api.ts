@@ -8,6 +8,17 @@ const api = axios.create({
 })
 
 export async function generateTripPlan(payload: TripPlanRequest): Promise<TripPlan> {
-  const response = await api.post<TripPlan>('/trip/plan', payload)
-  return response.data
+  try {
+    const response = await api.post<TripPlan>('/trip/plan', payload)
+    return response.data
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail
+      const message = Array.isArray(detail)
+        ? detail.map((item) => item.msg).join('；')
+        : detail || error.message
+      throw new Error(message)
+    }
+    throw error
+  }
 }

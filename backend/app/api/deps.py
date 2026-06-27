@@ -3,6 +3,7 @@ from functools import lru_cache
 from app.agents.attraction_agent import AttractionSearchAgent
 from app.agents.hotel_agent import HotelAgent
 from app.agents.planner_agent import PlannerAgent
+from app.agents.review_agent import ReviewAgent
 from app.agents.weather_agent import WeatherQueryAgent
 from app.config import settings
 from app.services.amap import AMapService
@@ -17,6 +18,7 @@ class TripPlanningPipeline:
         self.weather_agent = WeatherQueryAgent(amap_service)
         self.hotel_agent = HotelAgent()
         self.planner_agent = PlannerAgent(llm_service)
+        self.review_agent = ReviewAgent()
 
 
 @lru_cache

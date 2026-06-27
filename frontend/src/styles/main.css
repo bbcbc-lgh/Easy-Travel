@@ -199,6 +199,47 @@ select {
   font-size: 22px;
 }
 
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.section-title-row h2 {
+  margin: 0;
+}
+
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.quality-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7fafc;
+  color: #334455;
+}
+
+.quality-pass {
+  color: #16803d;
+}
+
+.quality-warn {
+  color: #b7791f;
+}
+
+.quality-warning {
+  margin-top: 14px;
+  border-radius: 8px;
+}
+
 .budget-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(120px, 1fr));

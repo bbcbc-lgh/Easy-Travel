@@ -7,6 +7,7 @@
       </a-button>
       <a-menu v-model:selectedKeys="selectedKeys" mode="inline" @click="scrollToSection">
         <a-menu-item key="overview"><LayoutDashboard :size="16" /> 行程概览</a-menu-item>
+        <a-menu-item key="quality"><ShieldCheck :size="16" /> 质量检查</a-menu-item>
         <a-menu-item key="budget"><WalletCards :size="16" /> 预算明细</a-menu-item>
         <a-menu-item key="map"><MapPinned :size="16" /> 地图路线</a-menu-item>
         <a-menu-item key="days"><CalendarDays :size="16" /> 每日行程</a-menu-item>
@@ -50,6 +51,27 @@
       </header>
 
       <a-alert class="suggestion" :message="tripPlan.overall_suggestions" type="info" show-icon />
+
+      <section class="section-block quality-block" id="quality" v-if="tripPlan.quality">
+        <div class="section-title-row">
+          <h2>质量检查</h2>
+          <a-tag :color="qualityColor">{{ tripPlan.quality.score }} 分</a-tag>
+        </div>
+        <div class="quality-grid">
+          <div v-for="item in qualityChecks" :key="item.key" class="quality-item">
+            <CheckCircle2 v-if="item.passed" :size="18" class="quality-pass" />
+            <CircleAlert v-else :size="18" class="quality-warn" />
+            <span>{{ item.label }}</span>
+          </div>
+        </div>
+        <a-alert
+          v-if="tripPlan.quality.warnings.length"
+          class="quality-warning"
+          type="warning"
+          show-icon
+          :message="tripPlan.quality.warnings.join(' ')"
+        />
+      </section>
 
       <section class="section-block" id="budget" v-if="tripPlan.budget">
         <h2>预算明细</h2>
@@ -148,6 +170,8 @@ import {
   ArrowLeft,
   ArrowUp,
   CalendarDays,
+  CheckCircle2,
+  CircleAlert,
   CloudSun,
   Download,
   Hotel,
@@ -155,6 +179,7 @@ import {
   MapPinned,
   Pencil,
   Save,
+  ShieldCheck,
   Trash2,
   Undo2,
   WalletCards
@@ -174,6 +199,26 @@ const mapStatus = ref('正在准备地图')
 
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
+const qualityLabels: Record<string, string> = {
+  no_duplicate_attractions: '景点不重复',
+  all_days_have_attractions: '每日有行程',
+  daily_duration_reasonable: '每日强度合理',
+  weather_complete: '天气覆盖完整',
+  enough_candidates: '候选景点充足'
+}
+const qualityChecks = computed(() =>
+  Object.entries(tripPlan.value?.quality?.checks || {}).map(([key, passed]) => ({
+    key,
+    passed,
+    label: qualityLabels[key] || key
+  }))
+)
+const qualityColor = computed(() => {
+  const score = tripPlan.value?.quality?.score || 0
+  if (score >= 85) return 'green'
+  if (score >= 70) return 'gold'
+  return 'red'
+})
 let mapInstance: { destroy: () => void } | null = null
 
 function loadInitialPlan(): TripPlan | null {

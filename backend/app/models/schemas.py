@@ -61,6 +61,12 @@ class Budget(BaseModel):
         return self
 
 
+class PlanQuality(BaseModel):
+    score: int = Field(100, ge=0, le=100, description="行程质量评分")
+    warnings: list[str] = Field(default_factory=list, description="需要用户注意的问题")
+    checks: dict[str, bool] = Field(default_factory=dict, description="质量检查结果")
+
+
 class DayPlan(BaseModel):
     date: str = Field(..., description="日期")
     day_index: int = Field(..., ge=0, description="第几天(从0开始)")
@@ -123,6 +129,7 @@ class TripPlan(BaseModel):
     weather_info: list[WeatherInfo] = Field(default_factory=list, description="天气信息")
     overall_suggestions: str = Field(..., description="总体建议")
     budget: Budget | None = Field(None, description="预算信息")
+    quality: PlanQuality | None = Field(None, description="行程质量评估")
 
 
 class HealthResponse(BaseModel):

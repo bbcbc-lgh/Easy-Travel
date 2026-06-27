@@ -35,4 +35,5 @@ async def create_trip_plan(
         weather_task,
         hotels_task,
     )
-    return await pipeline.planner_agent.run(request, attractions, hotels, weather_info)
+    plan = await pipeline.planner_agent.run(request, attractions, hotels, weather_info)
+    return pipeline.review_agent.run(request, plan, candidate_count=len(attractions))

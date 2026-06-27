@@ -28,16 +28,6 @@ def city_center(city: str) -> Location:
     return CITY_CENTERS.get(city, DEFAULT_CITY_CENTER)
 
 
-FALLBACK_IMAGES = [
-    "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
-    "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=900&q=80",
-    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80",
-    "https://images.unsplash.com/photo-1518002054494-3a6f94352e9d?auto=format&fit=crop&w=900&q=80",
-    "https://images.unsplash.com/photo-1491557345352-5929e343eb89?auto=format&fit=crop&w=900&q=80",
-    "https://images.unsplash.com/photo-1517760444937-f6397edcbbcd?auto=format&fit=crop&w=900&q=80",
-]
-
-
 def sample_attractions(city: str, preferences: str, center: Location | None = None) -> list[Attraction]:
     center = center or city_center(city)
     templates = [
@@ -60,7 +50,6 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
             description=f"{description}。已结合你的偏好：{preferences}。",
             category=category,
             rating=rating,
-            image_url=FALLBACK_IMAGES[index % len(FALLBACK_IMAGES)],
             ticket_price=price,
         )
         for index, (name, description, category, price, duration, rating) in enumerate(templates)

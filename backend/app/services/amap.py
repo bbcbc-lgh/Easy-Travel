@@ -14,34 +14,47 @@ class AMapService:
         if not self.settings.has_amap:
             return sample_attractions(request.city, request.preferences)
 
-        params = {
-            "key": self.settings.amap_web_service_key,
-            "keywords": f"{request.city} 景点 {request.preferences}",
-            "city": request.city,
-            "types": "110000",
-            "offset": 25,
-            "page": 1,
-            "extensions": "all",
-        }
+        raw_pois: list[dict] = []
+        target_count = self._target_attraction_count(request.days)
         try:
             async with httpx.AsyncClient(timeout=12) as client:
-                response = await client.get(f"{self.base_url}/place/text", params=params)
-                response.raise_for_status()
-                payload = response.json()
+                for keyword in self._build_attraction_keywords(request):
+                    for page in (1, 2):
+                        params = {
+                            "key": self.settings.amap_web_service_key,
+                            "keywords": keyword,
+                            "city": request.city,
+                            "types": "110000|110100|110200",
+                            "offset": 20,
+                            "page": page,
+                            "extensions": "all",
+                        }
+                        response = await client.get(f"{self.base_url}/place/text", params=params)
+                        response.raise_for_status()
+                        payload = response.json()
+                        raw_pois.extend(payload.get("pois") or [])
+                        if len(raw_pois) >= target_count * 3:
+                            break
+                    if len(raw_pois) >= target_count * 3:
+                        break
         except httpx.HTTPError:
             return await self._fallback_attractions(request)
 
-        pois = payload.get("pois") or []
         attractions: list[Attraction] = []
         seen_names: set[str] = set()
-        for poi in pois:
+        for poi in raw_pois:
+            if not self._is_attraction_poi(poi):
+                continue
             name = poi.get("name") or "未命名景点"
-            if name in seen_names:
+            if self._looks_like_non_attraction_name(name):
+                continue
+            normalized_name = self._normalize_name(name)
+            if normalized_name in seen_names:
                 continue
             location = self._parse_location(poi.get("location", ""))
             if location is None:
                 continue
-            seen_names.add(name)
+            seen_names.add(normalized_name)
             attractions.append(
                 Attraction(
                     name=name,
@@ -54,6 +67,8 @@ class AMapService:
                     ticket_price=self._estimate_ticket_price(poi.get("type", "")),
                 )
             )
+            if len(attractions) >= target_count:
+                break
 
         return attractions or await self._fallback_attractions(request)
 
@@ -124,6 +139,62 @@ class AMapService:
             payload = response.json()
         districts = payload.get("districts") or []
         return districts[0] if districts else None
+
+    @staticmethod
+    def _build_attraction_keywords(request: TripPlanRequest) -> list[str]:
+        base_keywords = [
+            f"{request.city} 景点",
+            f"{request.city} 必游",
+            f"{request.city} 博物馆",
+            f"{request.city} 公园",
+            f"{request.city} 老街",
+            f"{request.city} 地标",
+        ]
+        preference_parts = [
+            part.strip()
+            for part in request.preferences.replace("，", ",").replace("、", ",").split(",")
+            if part.strip()
+        ]
+        preference_keywords = [f"{request.city} {part}" for part in preference_parts[:4]]
+        keywords = [f"{request.city} 景点 {request.preferences}", *preference_keywords, *base_keywords]
+        return list(dict.fromkeys(keywords))
+
+    @staticmethod
+    def _target_attraction_count(days: int) -> int:
+        return max(12, min(36, days * 5))
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return "".join(name.lower().split())
+
+    @staticmethod
+    def _is_attraction_poi(poi: dict) -> bool:
+        category = str(poi.get("type") or "")
+        forbidden_categories = ("餐饮服务", "住宿服务", "购物服务", "生活服务", "商务住宅", "公司企业")
+        if any(item in category for item in forbidden_categories):
+            return False
+        return "风景名胜" in category or "公园广场" in category
+
+    @staticmethod
+    def _looks_like_non_attraction_name(name: str) -> bool:
+        food_or_shop_terms = (
+            "餐厅",
+            "饭店",
+            "酒楼",
+            "小吃",
+            "火锅",
+            "烧烤",
+            "咖啡",
+            "奶茶",
+            "甜品",
+            "椰子鸡",
+            "窑鸡",
+            "盐焗",
+            "门店",
+        )
+        if any(term in name for term in food_or_shop_terms):
+            return True
+        return name.endswith("店") or "店)" in name or "店）" in name
 
     @staticmethod
     def _parse_location(value: str) -> Location | None:

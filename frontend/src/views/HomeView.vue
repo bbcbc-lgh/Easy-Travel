@@ -2,12 +2,12 @@
   <main class="app-shell">
     <section class="planner-layout">
       <div class="intro-panel">
-        <p class="eyebrow">HelloAgents Chapter13</p>
+        <p class="eyebrow">Easy Travel</p>
         <h1>智能旅行助手</h1>
         <p class="intro-copy">输入目的地、日期、偏好与预算，生成包含景点、餐饮、酒店、天气和预算的可编辑行程。</p>
         <div class="status-grid">
           <div>
-            <span>4</span>
+            <span>5</span>
             <small>专属 Agent</small>
           </div>
           <div>
@@ -128,7 +128,8 @@ async function handleSubmit() {
     sessionStorage.setItem('tripPlan', JSON.stringify(plan))
     await router.push({ name: 'result' })
   } catch (error) {
-    message.error('生成计划失败，请检查后端服务或 API 配置')
+    const detail = error instanceof Error ? error.message : '请检查后端服务或 API 配置'
+    message.error(`生成计划失败：${detail}`)
   } finally {
     window.clearInterval(timer)
     loading.value = false

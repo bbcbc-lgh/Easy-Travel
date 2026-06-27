@@ -36,10 +36,6 @@ class Settings(BaseSettings):
     def has_amap(self) -> bool:
         return bool(self.amap_web_service_key)
 
-    @property
-    def has_unsplash(self) -> bool:
-        return bool(self.unsplash_access_key)
-
 
 @lru_cache
 def get_settings() -> Settings:

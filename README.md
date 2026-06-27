@@ -6,7 +6,7 @@ The project is built as a full-stack Agent application:
 
 - FastAPI backend for API routing, validation, orchestration, and external service integration.
 - Vue 3 + TypeScript frontend for form input, itinerary review, editing, map display, and export.
-- A small multi-agent planning pipeline for attraction search, weather lookup, hotel recommendation, and final itinerary generation.
+- A small multi-agent planning pipeline for attraction search, weather lookup, hotel recommendation, itinerary generation, and quality review.
 - Graceful fallback data when external API keys are missing or unavailable, so the app can still run locally.
 
 ## Features
@@ -15,6 +15,7 @@ The project is built as a full-stack Agent application:
 - Attraction, meal, hotel, weather, and budget planning in one response.
 - AMap-based map visualization for attraction markers when a JS API key is configured.
 - Editable daily itinerary with move/delete actions for attractions.
+- Built-in quality checks for repeated attractions, empty days, overloaded days, weather coverage, and candidate data sufficiency.
 - Export itinerary content as image or PDF.
 - Works without a database; no MySQL, Redis, or vector database is required.
 
@@ -42,7 +43,6 @@ External services:
 - OpenAI-compatible LLM API
 - AMap Web Service API
 - AMap JavaScript API
-- Unsplash API
 
 ## Project Structure
 
@@ -50,10 +50,10 @@ External services:
 .
 ├── backend/
 │   ├── app/
-│   │   ├── agents/      # Attraction, weather, hotel, and planner agents
+│   │   ├── agents/      # Attraction, weather, hotel, planner, and review agents
 │   │   ├── api/         # FastAPI routes and dependencies
 │   │   ├── models/      # Pydantic request/response schemas
-│   │   ├── services/    # LLM, AMap, Unsplash, and fallback data services
+│   │   ├── services/    # LLM, AMap, and fallback data services
 │   │   └── config.py
 │   ├── tests/
 │   ├── requirements.txt
@@ -84,7 +84,6 @@ LLM_API_KEY=
 LLM_BASE_URL=
 LLM_MODEL=gpt-4o-mini
 AMAP_WEB_SERVICE_KEY=
-UNSPLASH_ACCESS_KEY=
 ```
 
 Frontend configuration:

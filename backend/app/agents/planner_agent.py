@@ -32,16 +32,18 @@ class PlannerAgent:
             "你是行程规划专家。严格输出 JSON，字段必须符合 TripPlan 模型："
             "city,start_date,end_date,days,weather_info,overall_suggestions,budget。"
             "days 内每项包含 date,day_index,description,transportation,accommodation,hotel,attractions,meals。"
+            "只能使用用户提供的候选景点，不要编造坐标；同一个景点不要重复安排。"
         )
+        unique_attractions = self._unique_attractions(attractions)
         user_prompt = (
             f"目的地：{request.city}\n"
             f"日期：{request.start_date} 到 {request.end_date}，共 {request.days} 天\n"
             f"偏好：{request.preferences}\n预算：{request.budget}\n"
             f"交通：{request.transportation}\n住宿：{request.accommodation}\n"
-            f"候选景点：{[item.model_dump() for item in attractions[:10]]}\n"
+            f"候选景点：{[item.model_dump() for item in unique_attractions[:24]]}\n"
             f"候选酒店：{[item.model_dump() for item in hotels[:3]]}\n"
             f"天气：{[item.model_dump() for item in weather_info]}\n"
-            "请合理分配每天 2-3 个景点，包含餐饮和预算。"
+            "请合理分配每天 1-3 个景点，包含餐饮和预算。候选景点不足时可以减少每日景点数量，不要重复景点。"
         )
         payload = await self.llm_service.generate_json(system_prompt, user_prompt)
         if payload is None:
