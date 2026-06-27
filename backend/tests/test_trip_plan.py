@@ -54,3 +54,22 @@ def test_guiyang_fallback_uses_guiyang_coordinates_and_images() -> None:
     assert first_attraction["location"]["longitude"] < 107
     assert first_attraction["location"]["longitude"] > 106
     assert first_attraction["image_url"].startswith("https://images.unsplash.com/")
+
+
+def test_unknown_city_fallback_does_not_default_to_beijing() -> None:
+    response = client.post(
+        "/api/trip/plan",
+        json={
+            "city": "测试城市",
+            "start_date": "2026-07-01",
+            "days": 1,
+            "preferences": "轻松旅行",
+            "budget": "中等",
+            "transportation": "公共交通",
+            "accommodation": "经济型酒店",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    first_attraction = payload["days"][0]["attractions"][0]
+    assert first_attraction["location"]["longitude"] != 116.361128

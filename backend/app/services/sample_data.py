@@ -21,9 +21,11 @@ CITY_CENTERS: dict[str, Location] = {
     "青岛": Location(longitude=120.382665, latitude=36.066938),
 }
 
+DEFAULT_CITY_CENTER = Location(longitude=104.195397, latitude=35.86166)
+
 
 def city_center(city: str) -> Location:
-    return CITY_CENTERS.get(city, Location(longitude=116.397128, latitude=39.916527))
+    return CITY_CENTERS.get(city, DEFAULT_CITY_CENTER)
 
 
 FALLBACK_IMAGES = [
@@ -36,8 +38,8 @@ FALLBACK_IMAGES = [
 ]
 
 
-def sample_attractions(city: str, preferences: str) -> list[Attraction]:
-    center = city_center(city)
+def sample_attractions(city: str, preferences: str, center: Location | None = None) -> list[Attraction]:
+    center = center or city_center(city)
     templates = [
         ("城市博物馆", "适合了解城市历史脉络与文化背景", "历史文化", 60, 120, 4.7),
         ("中央公园", "适合慢行、拍照和放松", "自然风光", 0, 90, 4.5),

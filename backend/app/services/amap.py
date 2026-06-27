@@ -29,7 +29,7 @@ class AMapService:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPError:
-            return sample_attractions(request.city, request.preferences)
+            return await self._fallback_attractions(request)
 
         pois = payload.get("pois") or []
         attractions: list[Attraction] = []
@@ -50,7 +50,7 @@ class AMapService:
                 )
             )
 
-        return attractions or sample_attractions(request.city, request.preferences)
+        return attractions or await self._fallback_attractions(request)
 
     async def query_weather(self, request: TripPlanRequest) -> list[WeatherInfo]:
         if not self.settings.has_amap:
@@ -93,13 +93,32 @@ class AMapService:
         return result or sample_weather(request.start_date.isoformat(), request.days)
 
     async def _city_adcode(self, city: str) -> str | None:
+        district = await self._city_district(city)
+        return district.get("adcode") if district else None
+
+    async def _fallback_attractions(self, request: TripPlanRequest) -> list[Attraction]:
+        center = None
+        if self.settings.has_amap:
+            try:
+                center = await self._city_location(request.city)
+            except httpx.HTTPError:
+                center = None
+        return sample_attractions(request.city, request.preferences, center=center)
+
+    async def _city_location(self, city: str) -> Location | None:
+        district = await self._city_district(city)
+        if not district:
+            return None
+        return self._parse_location(district.get("center", ""))
+
+    async def _city_district(self, city: str) -> dict | None:
         params = {"key": self.settings.amap_web_service_key, "keywords": city, "subdistrict": 0}
         async with httpx.AsyncClient(timeout=12) as client:
             response = await client.get(f"{self.base_url}/config/district", params=params)
             response.raise_for_status()
             payload = response.json()
         districts = payload.get("districts") or []
-        return districts[0].get("adcode") if districts else None
+        return districts[0] if districts else None
 
     @staticmethod
     def _parse_location(value: str) -> Location | None:
