@@ -19,7 +19,7 @@ class AMapService:
             "keywords": f"{request.city} 景点 {request.preferences}",
             "city": request.city,
             "types": "110000",
-            "offset": 12,
+            "offset": 25,
             "page": 1,
             "extensions": "all",
         }
@@ -33,13 +33,18 @@ class AMapService:
 
         pois = payload.get("pois") or []
         attractions: list[Attraction] = []
+        seen_names: set[str] = set()
         for poi in pois:
+            name = poi.get("name") or "未命名景点"
+            if name in seen_names:
+                continue
             location = self._parse_location(poi.get("location", ""))
             if location is None:
                 continue
+            seen_names.add(name)
             attractions.append(
                 Attraction(
-                    name=poi.get("name") or "未命名景点",
+                    name=name,
                     address=poi.get("address") or request.city,
                     location=location,
                     visit_duration=90,

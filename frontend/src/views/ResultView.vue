@@ -94,7 +94,6 @@
 
             <div class="attraction-list">
               <div v-for="(attraction, attractionIndex) in day.attractions" :key="`${day.date}-${attraction.name}`" class="attraction-item">
-                <img :src="attraction.image_url || fallbackImage" :alt="attraction.name" @error="replaceBrokenImage" />
                 <div>
                   <h4>{{ attraction.name }}</h4>
                   <p>{{ attraction.description }}</p>
@@ -172,7 +171,6 @@ const editMode = ref(false)
 const originalPlan = ref<TripPlan | null>(null)
 const mapReady = ref(false)
 const mapStatus = ref('正在准备地图')
-const fallbackImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
@@ -228,13 +226,6 @@ function deleteAttraction(dayIndex: number, attractionIndex: number) {
 function persistPlan() {
   if (tripPlan.value) {
     sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
-  }
-}
-
-function replaceBrokenImage(event: Event) {
-  const image = event.target as HTMLImageElement
-  if (image.src !== fallbackImage) {
-    image.src = fallbackImage
   }
 }
 

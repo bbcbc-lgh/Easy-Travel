@@ -61,9 +61,17 @@ class PlannerAgent:
         selected_hotel = hotels[0] if hotels else None
         meals_template = sample_meals(request.city, request.budget)
         days: list[DayPlan] = []
+        unique_attractions = self._unique_attractions(attractions)
+        attraction_cursor = 0
         for day_index in range(request.days):
             current_date = request.start_date + timedelta(days=day_index)
-            day_attractions = attractions[day_index * 2 : day_index * 2 + 3] or attractions[:2]
+            remaining_days = request.days - day_index
+            remaining_attractions = len(unique_attractions) - attraction_cursor
+            target_count = 0
+            if remaining_attractions > 0:
+                target_count = max(1, min(3, (remaining_attractions + remaining_days - 1) // remaining_days))
+            day_attractions = unique_attractions[attraction_cursor : attraction_cursor + target_count]
+            attraction_cursor += target_count
             meals = [Meal.model_validate(meal.model_dump()) for meal in meals_template]
             days.append(
                 DayPlan(
@@ -91,6 +99,18 @@ class PlannerAgent:
             ),
             budget=budget,
         )
+
+    @staticmethod
+    def _unique_attractions(attractions: list[Attraction]) -> list[Attraction]:
+        seen: set[str] = set()
+        unique: list[Attraction] = []
+        for attraction in attractions:
+            key = f"{attraction.name}|{attraction.address}".strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(attraction)
+        return unique
 
     @staticmethod
     def _calculate_budget(days: list[DayPlan], request: TripPlanRequest) -> Budget:

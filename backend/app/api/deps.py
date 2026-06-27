@@ -7,15 +7,13 @@ from app.agents.weather_agent import WeatherQueryAgent
 from app.config import settings
 from app.services.amap import AMapService
 from app.services.llm import LLMService
-from app.services.unsplash import UnsplashService
 
 
 class TripPlanningPipeline:
     def __init__(self) -> None:
         amap_service = AMapService(settings)
-        unsplash_service = UnsplashService(settings)
         llm_service = LLMService(settings)
-        self.attraction_agent = AttractionSearchAgent(amap_service, unsplash_service)
+        self.attraction_agent = AttractionSearchAgent(amap_service)
         self.weather_agent = WeatherQueryAgent(amap_service)
         self.hotel_agent = HotelAgent()
         self.planner_agent = PlannerAgent(llm_service)

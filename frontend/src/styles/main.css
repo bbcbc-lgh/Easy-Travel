@@ -293,20 +293,12 @@ select {
 
 .attraction-item {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 12px;
   border: 1px solid #e5edf3;
   border-radius: 8px;
-}
-
-.attraction-item img {
-  width: 140px;
-  height: 92px;
-  object-fit: cover;
-  border-radius: 6px;
-  background: #d8e1e8;
 }
 
 .attraction-item h4 {
@@ -397,15 +389,6 @@ select {
   .form-grid,
   .status-grid {
     grid-template-columns: 1fr;
-  }
-
-  .attraction-item {
-    grid-template-columns: 1fr;
-  }
-
-  .attraction-item img {
-    width: 100%;
-    height: 180px;
   }
 
   .budget-grid {

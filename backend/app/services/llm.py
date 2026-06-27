@@ -35,7 +35,13 @@ class LLMService:
             )
         except OpenAIError:
             return None
-        content = response.choices[0].message.content or "{}"
+        if isinstance(response, str):
+            content = response
+        else:
+            try:
+                content = response.choices[0].message.content or "{}"
+            except (AttributeError, IndexError):
+                return None
         try:
             return json.loads(content)
         except json.JSONDecodeError:

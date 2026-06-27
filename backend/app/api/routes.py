@@ -17,7 +17,6 @@ async def health() -> HealthResponse:
         services={
             "llm": settings.has_llm,
             "amap": settings.has_amap,
-            "unsplash": settings.has_unsplash,
         },
     )
 
