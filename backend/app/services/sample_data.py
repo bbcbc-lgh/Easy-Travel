@@ -7,11 +7,33 @@ CITY_CENTERS: dict[str, Location] = {
     "杭州": Location(longitude=120.15507, latitude=30.274084),
     "成都": Location(longitude=104.066541, latitude=30.572269),
     "西安": Location(longitude=108.93977, latitude=34.341574),
+    "贵阳": Location(longitude=106.630153, latitude=26.647661),
+    "重庆": Location(longitude=106.551556, latitude=29.563009),
+    "广州": Location(longitude=113.264385, latitude=23.129112),
+    "深圳": Location(longitude=114.057868, latitude=22.543099),
+    "南京": Location(longitude=118.796877, latitude=32.060255),
+    "苏州": Location(longitude=120.585315, latitude=31.298886),
+    "武汉": Location(longitude=114.305393, latitude=30.593099),
+    "长沙": Location(longitude=112.938814, latitude=28.228209),
+    "昆明": Location(longitude=102.833669, latitude=24.88149),
+    "大理": Location(longitude=100.267638, latitude=25.606486),
+    "厦门": Location(longitude=118.089425, latitude=24.479833),
+    "青岛": Location(longitude=120.382665, latitude=36.066938),
 }
 
 
 def city_center(city: str) -> Location:
     return CITY_CENTERS.get(city, Location(longitude=116.397128, latitude=39.916527))
+
+
+FALLBACK_IMAGES = [
+    "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
+    "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=900&q=80",
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80",
+    "https://images.unsplash.com/photo-1518002054494-3a6f94352e9d?auto=format&fit=crop&w=900&q=80",
+    "https://images.unsplash.com/photo-1491557345352-5929e343eb89?auto=format&fit=crop&w=900&q=80",
+    "https://images.unsplash.com/photo-1517760444937-f6397edcbbcd?auto=format&fit=crop&w=900&q=80",
+]
 
 
 def sample_attractions(city: str, preferences: str) -> list[Attraction]:
@@ -36,6 +58,7 @@ def sample_attractions(city: str, preferences: str) -> list[Attraction]:
             description=f"{description}。已结合你的偏好：{preferences}。",
             category=category,
             rating=rating,
+            image_url=FALLBACK_IMAGES[index % len(FALLBACK_IMAGES)],
             ticket_price=price,
         )
         for index, (name, description, category, price, duration, rating) in enumerate(templates)

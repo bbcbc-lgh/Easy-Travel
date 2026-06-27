@@ -33,3 +33,24 @@ def test_create_trip_plan_with_fallback_data() -> None:
     assert len(payload["days"]) == 3
     assert payload["budget"]["total"] > 0
     assert payload["days"][0]["attractions"]
+
+
+def test_guiyang_fallback_uses_guiyang_coordinates_and_images() -> None:
+    response = client.post(
+        "/api/trip/plan",
+        json={
+            "city": "贵阳",
+            "start_date": "2026-07-01",
+            "days": 2,
+            "preferences": "自然风光和本地美食",
+            "budget": "中等",
+            "transportation": "公共交通",
+            "accommodation": "经济型酒店",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    first_attraction = payload["days"][0]["attractions"][0]
+    assert first_attraction["location"]["longitude"] < 107
+    assert first_attraction["location"]["longitude"] > 106
+    assert first_attraction["image_url"].startswith("https://images.unsplash.com/")
