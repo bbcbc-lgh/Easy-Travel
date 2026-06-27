@@ -1,58 +1,187 @@
-# Chapter13 智能旅行助手
+# Easy Travel
 
-一个基于 FastAPI + Vue 3 + TypeScript 的智能旅行规划综合案例。项目按课程文本拆成前端层、后端层、智能体层、外部服务层；没有外部密钥时会使用内置示例数据，方便先跑通流程。
+Easy Travel is an AI-powered travel planning web app. Tell it where you want to go, when you are traveling, what you care about, and your budget level; it generates an editable itinerary with attractions, meals, hotels, weather, route visualization, and budget estimates.
 
-## 架构
+The project is built as a full-stack Agent application:
 
-- `backend/`: FastAPI API、Pydantic 数据模型、服务封装、4 个 Agent。
-- `frontend/`: Vue 3 页面、旅行计划展示、地图占位/高德地图加载、导出图片/PDF。
+- FastAPI backend for API routing, validation, orchestration, and external service integration.
+- Vue 3 + TypeScript frontend for form input, itinerary review, editing, map display, and export.
+- A small multi-agent planning pipeline for attraction search, weather lookup, hotel recommendation, and final itinerary generation.
+- Graceful fallback data when external API keys are missing or unavailable, so the app can still run locally.
 
-## 需要你提供的配置
+## Features
 
-复制 `backend/.env.example` 为 `backend/.env`，按需填写：
+- AI itinerary generation based on city, dates, preferences, budget, transport, and accommodation type.
+- Attraction, meal, hotel, weather, and budget planning in one response.
+- AMap-based map visualization for attraction markers when a JS API key is configured.
+- Editable daily itinerary with move/delete actions for attractions.
+- Export itinerary content as image or PDF.
+- Works without a database; no MySQL, Redis, or vector database is required.
 
-- `LLM_API_KEY`: OpenAI/DeepSeek 等兼容 OpenAI API 的密钥。
-- `LLM_BASE_URL`: 兼容 OpenAI API 的服务地址，例如 DeepSeek 的地址。
-- `LLM_MODEL`: 使用的模型名称。
-- `AMAP_WEB_SERVICE_KEY`: 高德 Web 服务 Key，用于景点、天气、地理编码查询。
-- `VITE_AMAP_JS_KEY`: 高德 JS API Key，用于前端地图。
-- `UNSPLASH_ACCESS_KEY`: Unsplash Access Key，用于景点图片。
+## Tech Stack
 
-当前版本不需要 MySQL、Redis 或向量数据库。
+Backend:
 
-## 启动
+- Python
+- FastAPI
+- Pydantic
+- httpx
+- OpenAI-compatible LLM API client
 
-后端：
+Frontend:
+
+- Vue 3
+- TypeScript
+- Vite
+- Ant Design Vue
+- AMap JS API
+- html2canvas + jsPDF
+
+External services:
+
+- OpenAI-compatible LLM API
+- AMap Web Service API
+- AMap JavaScript API
+- Unsplash API
+
+## Project Structure
+
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── agents/      # Attraction, weather, hotel, and planner agents
+│   │   ├── api/         # FastAPI routes and dependencies
+│   │   ├── models/      # Pydantic request/response schemas
+│   │   ├── services/    # LLM, AMap, Unsplash, and fallback data services
+│   │   └── config.py
+│   ├── tests/
+│   ├── requirements.txt
+│   └── run.py
+└── frontend/
+    ├── src/
+    │   ├── router/
+    │   ├── services/
+    │   ├── styles/
+    │   ├── types/
+    │   └── views/
+    └── package.json
+```
+
+## Configuration
+
+Backend configuration:
 
 ```powershell
-cd E:\Source\Hello-Agents\Chapter13\backend
+cd backend
+Copy-Item .env.example .env
+```
+
+Fill in `backend/.env` as needed:
+
+```env
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL=gpt-4o-mini
+AMAP_WEB_SERVICE_KEY=
+UNSPLASH_ACCESS_KEY=
+```
+
+Frontend configuration:
+
+```powershell
+cd frontend
+Copy-Item .env.example .env
+```
+
+Fill in `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_AMAP_JS_KEY=
+```
+
+If you do not provide API keys, the backend will use deterministic sample data. This is useful for demos, tests, and offline development.
+
+## Run Locally
+
+### Backend
+
+```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
-Copy-Item .env.example .env
 .\.venv\Scripts\python run.py
 ```
 
-建议使用 Python 3.10-3.12。当前依赖中的 `pydantic-core` 在 Windows Python 3.14 下可能需要本地 Rust 编译，容易安装失败。
+API docs will be available at:
 
-前端：
+```text
+http://localhost:8000/docs
+```
+
+Recommended Python version: 3.10-3.12. On Windows, Python 3.14 may require local Rust compilation for `pydantic-core`.
+
+### Frontend
 
 ```powershell
-cd E:\Source\Hello-Agents\Chapter13\frontend
+cd frontend
 npm install
 npm run dev
 ```
 
-访问：
+Open:
 
-- 后端文档: http://localhost:8000/docs
-- 前端页面: http://localhost:5173
+```text
+http://localhost:5173
+```
 
-## 测试
+## Test and Build
+
+Backend tests:
 
 ```powershell
-cd E:\Source\Hello-Agents\Chapter13\backend
+cd backend
 .\.venv\Scripts\python -m pytest
+```
 
-cd E:\Source\Hello-Agents\Chapter13\frontend
+Frontend production build:
+
+```powershell
+cd frontend
 npm run build
 ```
+
+## API Overview
+
+Health check:
+
+```text
+GET /api/health
+```
+
+Generate travel plan:
+
+```text
+POST /api/trip/plan
+```
+
+Example request:
+
+```json
+{
+  "city": "北京",
+  "start_date": "2026-07-01",
+  "days": 3,
+  "preferences": "历史文化、城市漫游、美食，节奏适中",
+  "budget": "中等",
+  "transportation": "公共交通",
+  "accommodation": "经济型酒店"
+}
+```
+
+## Notes
+
+- `backend/.env` and `frontend/.env` are intentionally ignored by Git.
+- AMap Web Service can be sensitive to network routing. If you are using a VPN and the AMap request fails, the app will fall back to sample data instead of failing the whole planning flow.
+- The first production build may show a large chunk warning because Ant Design Vue and map/export libraries are bundled into the app. It does not prevent the build from succeeding.
