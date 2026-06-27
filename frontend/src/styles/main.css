@@ -223,7 +223,14 @@ select {
   background: #dbe7ef;
 }
 
+.map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
 .map-fallback {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   align-content: center;

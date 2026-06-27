@@ -64,7 +64,8 @@
 
       <section class="section-block" id="map" data-html2canvas-ignore>
         <h2>地图路线</h2>
-        <div id="amap-container" class="map-panel">
+        <div class="map-panel">
+          <div id="amap-container" class="map-canvas"></div>
           <div v-if="!mapReady" class="map-fallback">
             <MapPinned :size="28" />
             <p>{{ mapStatus }}</p>
@@ -175,6 +176,7 @@ const fallbackImage = 'https://source.unsplash.com/1200x800/?travel,city'
 
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
+let mapInstance: { destroy: () => void } | null = null
 
 function loadInitialPlan(): TripPlan | null {
   const cached = sessionStorage.getItem('tripPlan')
@@ -231,6 +233,7 @@ function persistPlan() {
 
 async function initMap() {
   mapReady.value = false
+  mapStatus.value = '正在准备地图'
   const key = import.meta.env.VITE_AMAP_JS_KEY
   if (!key) {
     mapStatus.value = '未配置 VITE_AMAP_JS_KEY，当前显示为静态行程数据'
@@ -243,12 +246,15 @@ async function initMap() {
 
   try {
     await nextTick()
+    mapInstance?.destroy()
+    mapInstance = null
     const first = allAttractions.value[0]
     const AMap = await AMapLoader.load({ key, version: '2.0' })
     const map = new AMap.Map('amap-container', {
       zoom: 12,
       center: [first.location.longitude, first.location.latitude]
     })
+    mapInstance = map
     allAttractions.value.forEach((attraction, index) => {
       const marker = new AMap.Marker({
         position: [attraction.location.longitude, attraction.location.latitude],
