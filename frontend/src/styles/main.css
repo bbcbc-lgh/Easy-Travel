@@ -1,0 +1,407 @@
+:root {
+  font-family: Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  color: #1f2933;
+  background: #eef3f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 32px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(238, 243, 247, 0.92)),
+    url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80") center/cover;
+}
+
+.planner-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 32px;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  align-items: center;
+  min-height: calc(100vh - 64px);
+}
+
+.intro-panel h1,
+.result-header h1,
+.empty-state h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 64px);
+  line-height: 1.04;
+  letter-spacing: 0;
+  color: #162033;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-weight: 700;
+  color: #0f766e;
+  text-transform: uppercase;
+}
+
+.intro-copy {
+  max-width: 560px;
+  font-size: 18px;
+  line-height: 1.8;
+  color: #3f4f5f;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.status-grid div,
+.form-card,
+.section-block,
+.day-card {
+  border: 1px solid rgba(32, 55, 72, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 45px rgba(32, 55, 72, 0.1);
+}
+
+.status-grid div {
+  padding: 16px;
+}
+
+.status-grid span {
+  display: block;
+  font-size: 30px;
+  font-weight: 800;
+  color: #0f766e;
+}
+
+.status-grid small {
+  color: #596b7a;
+}
+
+.form-card {
+  padding: 10px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.loading-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4e89;
+}
+
+.actions-row,
+.header-actions,
+.edit-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.actions-row {
+  justify-content: flex-end;
+}
+
+.result-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+  min-height: 100vh;
+  padding: 24px;
+  background: #eef3f7;
+}
+
+.side-nav {
+  position: sticky;
+  top: 24px;
+  height: calc(100vh - 48px);
+  padding: 14px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(32, 55, 72, 0.08);
+}
+
+.back-button {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.side-nav .ant-menu {
+  border-inline-end: none;
+}
+
+.side-nav .ant-menu-title-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-content {
+  display: grid;
+  gap: 18px;
+  width: min(1120px, 100%);
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 28px 30px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.result-header p {
+  margin: 8px 0 0;
+  color: #5e6f7f;
+}
+
+.suggestion {
+  border-radius: 8px;
+}
+
+.section-block {
+  padding: 24px;
+}
+
+.section-block h2 {
+  margin: 0 0 18px;
+  font-size: 22px;
+}
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.budget-grid .ant-statistic {
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7fafc;
+}
+
+.total-budget {
+  background: #fff7ed !important;
+}
+
+.map-panel {
+  position: relative;
+  height: 360px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #dbe7ef;
+}
+
+.map-fallback {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  height: 100%;
+  color: #4b5f6f;
+  text-align: center;
+}
+
+.day-list {
+  display: grid;
+  gap: 16px;
+}
+
+.day-card {
+  padding: 20px;
+  box-shadow: none;
+}
+
+.day-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.day-card-header span {
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.day-card-header h3 {
+  margin: 4px 0;
+  font-size: 20px;
+}
+
+.day-card-header p {
+  margin: 0;
+  color: #607080;
+}
+
+.hotel-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: #f1f7f5;
+}
+
+.hotel-strip small {
+  color: #5e6f7f;
+}
+
+.attraction-list {
+  display: grid;
+  gap: 12px;
+}
+
+.attraction-item {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5edf3;
+  border-radius: 8px;
+}
+
+.attraction-item img {
+  width: 140px;
+  height: 92px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #d8e1e8;
+}
+
+.attraction-item h4 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.attraction-item p {
+  margin: 0 0 8px;
+  color: #4e5f6f;
+  line-height: 1.6;
+}
+
+.attraction-item small {
+  color: #718191;
+}
+
+.meal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.weather-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.weather-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7fafc;
+}
+
+.weather-card span,
+.weather-card small {
+  color: #5f7080;
+}
+
+.weather-card strong {
+  font-size: 20px;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 100vh;
+  gap: 18px;
+  background: #eef3f7;
+}
+
+@media (max-width: 920px) {
+  .app-shell,
+  .result-shell {
+    padding: 16px;
+  }
+
+  .planner-layout,
+  .result-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-layout {
+    align-items: start;
+  }
+
+  .side-nav {
+    position: static;
+    height: auto;
+  }
+
+  .result-header,
+  .day-card-header {
+    flex-direction: column;
+  }
+
+  .budget-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .form-grid,
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attraction-item {
+    grid-template-columns: 1fr;
+  }
+
+  .attraction-item img {
+    width: 100%;
+    height: 180px;
+  }
+
+  .budget-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,20 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.env
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/tsconfig.tsbuildinfo
+frontend/src/**/*.js
+frontend/src/**/*.js.map
+
+# Editor and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

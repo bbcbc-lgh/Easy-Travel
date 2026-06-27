@@ -1,0 +1,35 @@
+from fastapi.testclient import TestClient
+
+from app.api.main import app
+
+
+client = TestClient(app)
+
+
+def test_health_returns_service_flags() -> None:
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "llm" in payload["services"]
+
+
+def test_create_trip_plan_with_fallback_data() -> None:
+    response = client.post(
+        "/api/trip/plan",
+        json={
+            "city": "北京",
+            "start_date": "2026-07-01",
+            "days": 3,
+            "preferences": "历史文化和城市漫游",
+            "budget": "中等",
+            "transportation": "公共交通",
+            "accommodation": "经济型酒店",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["city"] == "北京"
+    assert len(payload["days"]) == 3
+    assert payload["budget"]["total"] > 0
+    assert payload["days"][0]["attractions"]
