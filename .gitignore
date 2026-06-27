@@ -4,6 +4,7 @@ backend/__pycache__/
 backend/.pytest_cache/
 backend/.env
 *.pyc
+.logs/
 
 # Node
 frontend/node_modules/

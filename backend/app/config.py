@@ -8,7 +8,7 @@ ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class Settings(BaseSettings):
-    app_name: str = "HelloAgents Trip Planner"
+    app_name: str = "Easy Travel"
     app_env: str = "development"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
