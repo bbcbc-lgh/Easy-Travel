@@ -34,7 +34,7 @@
             <template #icon><Undo2 :size="17" /></template>
             取消
           </a-button>
-          <a-dropdown>
+          <a-dropdown :trigger="['click']">
             <a-button>
               <template #icon><Download :size="17" /></template>
               导出
