@@ -2,8 +2,13 @@ import axios from 'axios'
 
 import type { TripPlan, TripPlanRequest, TripPlanSummary } from '../types/trip'
 
+const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+const defaultApiBaseUrl = isLocalHost
+  ? 'http://localhost:8000/api'
+  : 'https://easy-travel-production-d58a.up.railway.app/api'
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl,
   timeout: 60000
 })
 
@@ -47,7 +52,7 @@ function throwApiError(error: unknown): never {
   if (axios.isAxiosError(error)) {
     const detail = error.response?.data?.detail
     const message = Array.isArray(detail)
-      ? detail.map((item) => item.msg).join('；')
+      ? detail.map((item) => item.msg).join('; ')
       : detail || error.message
     throw new Error(message)
   }
