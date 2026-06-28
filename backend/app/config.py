@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     database_path: str = "data/easy_travel.sqlite3"
 
-    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     @computed_field
     @property
