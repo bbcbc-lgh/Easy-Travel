@@ -37,6 +37,33 @@ def test_create_trip_plan_with_fallback_data() -> None:
     assert payload["budget"]["total"] > 0
     assert payload["days"][0]["attractions"]
     assert payload["quality"]["score"] > 0
+    assert payload["id"]
+
+
+def test_saved_trip_plan_can_be_loaded_and_listed() -> None:
+    create_response = client.post(
+        "/api/trip/plan",
+        json={
+            "city": "杭州",
+            "start_date": "2026-07-01",
+            "days": 2,
+            "preferences": "自然风光和城市漫游",
+            "budget": "中等",
+            "transportation": "公共交通",
+            "accommodation": "经济型酒店",
+        },
+    )
+    assert create_response.status_code == 200
+    plan_id = create_response.json()["id"]
+
+    load_response = client.get(f"/api/trip/plans/{plan_id}")
+    assert load_response.status_code == 200
+    assert load_response.json()["city"] == "杭州"
+
+    list_response = client.get("/api/trip/plans?limit=5")
+    assert list_response.status_code == 200
+    plan_ids = [item["id"] for item in list_response.json()]
+    assert plan_id in plan_ids
 
 
 def test_guiyang_fallback_uses_guiyang_coordinates() -> None:

@@ -67,6 +67,14 @@ class PlanQuality(BaseModel):
     checks: dict[str, bool] = Field(default_factory=dict, description="质量检查结果")
 
 
+class RouteLeg(BaseModel):
+    origin: str = Field(..., description="起点名称")
+    destination: str = Field(..., description="终点名称")
+    distance_meters: int = Field(0, ge=0, description="距离(米)")
+    duration_minutes: int = Field(0, ge=0, description="耗时(分钟)")
+    mode: str = Field("", description="交通方式")
+
+
 class DayPlan(BaseModel):
     date: str = Field(..., description="日期")
     day_index: int = Field(..., ge=0, description="第几天(从0开始)")
@@ -76,6 +84,7 @@ class DayPlan(BaseModel):
     hotel: Hotel | None = Field(None, description="酒店信息")
     attractions: list[Attraction] = Field(default_factory=list, description="景点列表")
     meals: list[Meal] = Field(default_factory=list, description="餐饮安排")
+    routes: list[RouteLeg] = Field(default_factory=list, description="当日路线估算")
 
 
 class WeatherInfo(BaseModel):
@@ -86,6 +95,8 @@ class WeatherInfo(BaseModel):
     night_temp: int = Field(..., description="夜间温度(摄氏度)")
     wind_direction: str = Field(..., description="风向")
     wind_power: str = Field(..., description="风力")
+    forecast_available: bool = Field(True, description="是否有可信天气预报")
+    notice: str | None = Field(None, description="天气提示")
 
     @field_validator("day_temp", "night_temp", mode="before")
     @classmethod
@@ -122,6 +133,7 @@ class TripPlanRequest(BaseModel):
 
 
 class TripPlan(BaseModel):
+    id: str | None = Field(None, description="行程ID")
     city: str = Field(..., description="目的地城市")
     start_date: str = Field(..., description="开始日期")
     end_date: str = Field(..., description="结束日期")
@@ -136,3 +148,13 @@ class HealthResponse(BaseModel):
     status: str
     app_name: str
     services: dict[str, bool]
+
+
+class TripPlanSummary(BaseModel):
+    id: str
+    city: str
+    start_date: str
+    end_date: str
+    days: int
+    created_at: str
+    updated_at: str

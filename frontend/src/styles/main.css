@@ -24,8 +24,11 @@ select {
   min-height: 100vh;
   padding: 32px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(238, 243, 247, 0.92)),
-    url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80") center/cover;
+    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(232, 239, 244, 0.96)),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(29, 78, 137, 0.06) 1px, transparent 1px),
+    #eef3f7;
+  background-size: auto, 42px 42px, 42px 42px, auto;
 }
 
 .planner-layout {
@@ -362,6 +365,27 @@ select {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+
+.route-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.route-list div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7fafc;
+  color: #34495e;
+}
+
+.route-list small {
+  margin-left: auto;
+  color: #687b8b;
 }
 
 .weather-grid {

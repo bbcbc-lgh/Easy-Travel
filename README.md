@@ -12,12 +12,13 @@ The project is built as a full-stack Agent application:
 ## Features
 
 - AI itinerary generation based on city, dates, preferences, budget, transport, and accommodation type.
-- Attraction, meal, hotel, weather, and budget planning in one response.
+- AMap-backed attraction, meal, hotel, weather, route, and budget planning in one response.
 - AMap-based map visualization for attraction markers when a JS API key is configured.
 - Editable daily itinerary with move/delete actions for attractions.
+- SQLite persistence for generated plans, editable saved results, and local share links.
 - Built-in quality checks for repeated attractions, empty days, overloaded days, weather coverage, and candidate data sufficiency.
 - Export itinerary content as image or PDF.
-- Works without a database; no MySQL, Redis, or vector database is required.
+- Works without MySQL, Redis, or vector database.
 
 ## Tech Stack
 
@@ -43,6 +44,7 @@ External services:
 - OpenAI-compatible LLM API
 - AMap Web Service API
 - AMap JavaScript API
+- SQLite
 
 ## Project Structure
 
@@ -84,6 +86,7 @@ LLM_API_KEY=
 LLM_BASE_URL=
 LLM_MODEL=gpt-4o-mini
 AMAP_WEB_SERVICE_KEY=
+DATABASE_PATH=data/easy_travel.sqlite3
 ```
 
 Frontend configuration:
@@ -101,6 +104,28 @@ VITE_AMAP_JS_KEY=
 ```
 
 If you do not provide API keys, the backend will use deterministic sample data. This is useful for demos, tests, and offline development.
+
+SQLite is used through Python's built-in `sqlite3` module. No extra database server is required. If you want to inspect the local database manually on Windows, this project can be opened with `D:\SQLite\sqlite3.exe backend\data\easy_travel.sqlite3`.
+
+## AMap Web Service Scope
+
+The current backend needs these AMap Web Service API capabilities:
+
+- District search: resolve a city name to `adcode` and city center coordinates.
+- Place text search 2.0: search attractions, hotels, and restaurants by keyword, region, type code, pagination, and extended fields.
+- Place text search 1.0 fallback: use the older `/v3/place/text` response when 2.0 is unavailable.
+- Weather query: fetch forecast weather by city `adcode`.
+- Route planning: estimate daily hotel-to-attraction and attraction-to-attraction travel legs.
+
+Useful request examples to provide next:
+
+- `/v3/config/district` for city/adcode lookup.
+- `/v5/place/text` for scenic spots, parks, museums, landmarks, hotels, restaurants, and food streets.
+- `/v3/place/text` as a fallback request example.
+- `/v3/weather/weatherInfo` for forecast data.
+- `/v5/direction/driving`, `/v5/direction/walking`, and transit route examples.
+
+The frontend map uses AMap JavaScript API through `VITE_AMAP_JS_KEY`; keep that key in `frontend/.env`.
 
 ## Run Locally
 
@@ -164,6 +189,16 @@ Generate travel plan:
 ```text
 POST /api/trip/plan
 ```
+
+Saved plans:
+
+```text
+GET /api/trip/plans
+GET /api/trip/plans/{plan_id}
+PUT /api/trip/plans/{plan_id}
+```
+
+After a plan is generated, the frontend opens `/result/{plan_id}`. That local link can be copied and reopened while the backend and SQLite database are available.
 
 Example request:
 

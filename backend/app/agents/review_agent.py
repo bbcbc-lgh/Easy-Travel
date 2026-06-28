@@ -26,9 +26,11 @@ class ReviewAgent:
         if overloaded_days:
             warnings.append(f"第 {', '.join(map(str, overloaded_days))} 天景点较密集，实际出行时建议删减。")
 
-        checks["weather_complete"] = len(plan.weather_info) >= request.days
+        unavailable_weather = [item for item in plan.weather_info if not item.forecast_available]
+        checks["weather_complete"] = len(plan.weather_info) >= request.days and not unavailable_weather
         if not checks["weather_complete"]:
-            warnings.append("天气数据不足，部分日期使用了兜底信息。")
+            notice = next((item.notice for item in unavailable_weather if item.notice), None)
+            warnings.append(notice or "天气数据不足，部分日期无法保证查询天气。")
 
         checks["enough_candidates"] = candidate_count >= min(request.days * 2, 8)
         if not checks["enough_candidates"]:

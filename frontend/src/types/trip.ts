@@ -49,6 +49,14 @@ export interface PlanQuality {
   checks: Record<string, boolean>
 }
 
+export interface RouteLeg {
+  origin: string
+  destination: string
+  distance_meters: number
+  duration_minutes: number
+  mode: string
+}
+
 export interface DayPlan {
   date: string
   day_index: number
@@ -58,6 +66,7 @@ export interface DayPlan {
   hotel?: Hotel | null
   attractions: Attraction[]
   meals: Meal[]
+  routes: RouteLeg[]
 }
 
 export interface WeatherInfo {
@@ -68,6 +77,8 @@ export interface WeatherInfo {
   night_temp: number
   wind_direction: string
   wind_power: string
+  forecast_available: boolean
+  notice?: string | null
 }
 
 export interface TripPlanRequest {
@@ -82,6 +93,7 @@ export interface TripPlanRequest {
 }
 
 export interface TripPlan {
+  id?: string | null
   city: string
   start_date: string
   end_date: string
@@ -90,4 +102,14 @@ export interface TripPlan {
   overall_suggestions: string
   budget?: Budget | null
   quality?: PlanQuality | null
+}
+
+export interface TripPlanSummary {
+  id: string
+  city: string
+  start_date: string
+  end_date: string
+  days: number
+  created_at: string
+  updated_at: string
 }

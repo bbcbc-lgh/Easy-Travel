@@ -1,7 +1,10 @@
 from app.models.schemas import Hotel, TripPlanRequest
-from app.services.sample_data import sample_hotels
+from app.services.amap import AMapService
 
 
 class HotelAgent:
+    def __init__(self, amap_service: AMapService):
+        self.amap_service = amap_service
+
     async def run(self, request: TripPlanRequest) -> list[Hotel]:
-        return sample_hotels(request.city, request.accommodation, request.budget)
+        return await self.amap_service.search_hotels(request)

@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
 
     amap_web_service_key: str = ""
-    unsplash_access_key: str = ""
+
+    database_path: str = "data/easy_travel.sqlite3"
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8")
 

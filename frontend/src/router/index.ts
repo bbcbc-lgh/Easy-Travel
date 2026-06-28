@@ -7,7 +7,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
-    { path: '/result', name: 'result', component: ResultView }
+    { path: '/result', name: 'result', component: ResultView },
+    { path: '/result/:id', name: 'shared-result', component: ResultView }
   ]
 })
 

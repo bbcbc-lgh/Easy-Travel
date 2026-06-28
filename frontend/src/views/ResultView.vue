@@ -35,6 +35,10 @@
             <template #icon><Undo2 :size="17" /></template>
             取消
           </a-button>
+          <a-button v-if="tripPlan.id" @click="copyShareLink">
+            <template #icon><Link2 :size="17" /></template>
+            复制链接
+          </a-button>
           <a-dropdown :trigger="['click']">
             <a-button>
               <template #icon><Download :size="17" /></template>
@@ -138,6 +142,14 @@
             <div class="meal-row">
               <a-tag v-for="meal in day.meals" :key="meal.type">{{ meal.name }} {{ meal.estimated_cost }} 元</a-tag>
             </div>
+
+            <div v-if="(day.routes || []).length" class="route-list">
+              <div v-for="route in day.routes || []" :key="`${day.date}-${route.origin}-${route.destination}`">
+                <Route :size="15" />
+                <span>{{ route.origin }} → {{ route.destination }}</span>
+                <small>{{ formatDistance(route.distance_meters) }} · 约 {{ route.duration_minutes }} 分钟 · {{ route.mode }}</small>
+              </div>
+            </div>
           </article>
         </div>
       </section>
@@ -148,7 +160,10 @@
           <div v-for="weather in tripPlan.weather_info" :key="weather.date" class="weather-card">
             <span>{{ weather.date }}</span>
             <strong>{{ weather.day_weather }}</strong>
-            <small>{{ weather.night_temp }} 至 {{ weather.day_temp }} ℃ · {{ weather.wind_direction }}风 {{ weather.wind_power }}</small>
+            <small v-if="weather.forecast_available !== false">
+              {{ weather.night_temp }} 至 {{ weather.day_temp }} ℃ · {{ weather.wind_direction }}风 {{ weather.wind_power }}
+            </small>
+            <small v-else>{{ weather.notice || '行程日期太久远，无法保证查询天气。' }}</small>
           </div>
         </div>
       </section>
@@ -176,8 +191,10 @@ import {
   Download,
   Hotel,
   LayoutDashboard,
+  Link2,
   MapPinned,
   Pencil,
+  Route,
   Save,
   ShieldCheck,
   Trash2,
@@ -186,17 +203,20 @@ import {
 } from 'lucide-vue-next'
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
+import { getTripPlan, updateTripPlan } from '../services/api'
 import type { TripPlan } from '../types/trip'
 
 const router = useRouter()
+const route = useRoute()
 const selectedKeys = ref(['overview'])
 const editMode = ref(false)
 const originalPlan = ref<TripPlan | null>(null)
 const mapReady = ref(false)
 const mapStatus = ref('正在准备地图')
 
+const routePlanId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
 const qualityLabels: Record<string, string> = {
@@ -238,9 +258,18 @@ function toggleEditMode() {
   }
 }
 
-function saveChanges() {
+async function saveChanges() {
   editMode.value = false
   originalPlan.value = null
+  if (tripPlan.value?.id) {
+    try {
+      tripPlan.value = await updateTripPlan(tripPlan.value.id, tripPlan.value)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '请稍后再试'
+      message.error(`保存失败：${detail}`)
+      return
+    }
+  }
   persistPlan()
   void initMap()
   message.success('修改已保存')
@@ -271,6 +300,37 @@ function deleteAttraction(dayIndex: number, attractionIndex: number) {
 function persistPlan() {
   if (tripPlan.value) {
     sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
+  }
+}
+
+function formatDistance(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)} 公里`
+  }
+  return `${value} 米`
+}
+
+async function copyShareLink() {
+  if (!tripPlan.value?.id) return
+  const url = `${window.location.origin}/result/${tripPlan.value.id}`
+  await navigator.clipboard.writeText(url)
+  message.success('链接已复制')
+}
+
+async function loadPlanFromRoute() {
+  if (!routePlanId.value) return
+  const cached = loadInitialPlan()
+  if (cached?.id === routePlanId.value) {
+    tripPlan.value = cached
+    return
+  }
+  try {
+    tripPlan.value = await getTripPlan(routePlanId.value)
+    persistPlan()
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : '请返回首页重新生成'
+    message.error(`行程加载失败：${detail}`)
+    tripPlan.value = null
   }
 }
 
@@ -334,7 +394,8 @@ async function exportAsPDF() {
   pdf.save(`${tripPlan.value.city}旅行计划.pdf`)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadPlanFromRoute()
   void initMap()
 })
 </script>

@@ -126,7 +126,7 @@ async function handleSubmit() {
     loadingProgress.value = 100
     loadingStatus.value = '规划完成'
     sessionStorage.setItem('tripPlan', JSON.stringify(plan))
-    await router.push({ name: 'result' })
+    await router.push(plan.id ? { name: 'shared-result', params: { id: plan.id } } : { name: 'result' })
   } catch (error) {
     const detail = error instanceof Error ? error.message : '请检查后端服务或 API 配置'
     message.error(`生成计划失败：${detail}`)
