@@ -1,13 +1,13 @@
-import os
-
 import uvicorn
 
 from app.config import settings
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", settings.api_port))
-    host = "0.0.0.0" if "PORT" in os.environ else settings.api_host
+    port = settings.api_port
+    host = settings.api_host
+    if settings.app_env != "development" and host in {"127.0.0.1", "localhost"}:
+        host = "0.0.0.0"
     uvicorn.run(
         "app.api.main:app",
         host=host,
