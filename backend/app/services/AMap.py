@@ -5,9 +5,9 @@ from typing import Any
 
 import httpx
 
-from app.config import Settings
-from app.models.schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
-from app.services.sample_data import sample_attractions, sample_hotels, sample_meals, sample_weather
+from app.Config import Settings
+from app.models.Schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
+from app.services.SampleData import sample_attractions, sample_hotels, sample_meals, sample_weather
 
 
 class AMapService:

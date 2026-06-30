@@ -1,5 +1,5 @@
-from app.models.schemas import Hotel, TripPlanRequest
-from app.services.amap import AMapService
+from app.models.Schemas import Hotel, TripPlanRequest
+from app.services.AMap import AMapService
 
 
 class HotelAgent:

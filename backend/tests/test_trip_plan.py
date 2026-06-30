@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from app.agents.review_agent import ReviewAgent
-from app.api.main import app
-from app.models.schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
-from app.services.amap import AMapService
+from app.agents.ReviewAgent import ReviewAgent
+from app.api.Main import app
+from app.models.Schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
+from app.services.AMap import AMapService
 
 
 client = TestClient(app)

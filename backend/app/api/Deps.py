@@ -1,15 +1,15 @@
 from functools import lru_cache
 
-from app.agents.attraction_agent import AttractionSearchAgent
-from app.agents.hotel_agent import HotelAgent
-from app.agents.meal_agent import MealAgent
-from app.agents.planner_agent import PlannerAgent
-from app.agents.review_agent import ReviewAgent
-from app.agents.weather_agent import WeatherQueryAgent
-from app.config import settings
-from app.services.amap import AMapService
-from app.services.database import TripPlanRepository
-from app.services.llm import LLMService
+from app.agents.AttractionAgent import AttractionSearchAgent
+from app.agents.HotelAgent import HotelAgent
+from app.agents.MealAgent import MealAgent
+from app.agents.PlannerAgent import PlannerAgent
+from app.agents.ReviewAgent import ReviewAgent
+from app.agents.WeatherAgent import WeatherQueryAgent
+from app.Config import settings
+from app.services.AMap import AMapService
+from app.services.Database import TripPlanRepository
+from app.services.LLM import LLMService
 
 
 class TripPlanningPipeline:

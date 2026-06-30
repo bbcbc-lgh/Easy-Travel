@@ -3,7 +3,7 @@ import json
 from openai import AsyncOpenAI
 from openai import OpenAIError
 
-from app.config import Settings
+from app.Config import Settings
 
 
 class LLMService:

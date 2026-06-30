@@ -5,8 +5,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
-from app.config import settings
+from app.api.Routes import router
+from app.Config import settings
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 static_dir = Path(__file__).resolve().parents[1] / "static"

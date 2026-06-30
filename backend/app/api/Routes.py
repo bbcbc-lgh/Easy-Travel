@@ -2,10 +2,10 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import TripPlanningPipeline, get_pipeline, get_trip_plan_repository
-from app.config import settings
-from app.models.schemas import HealthResponse, TripPlan, TripPlanRequest, TripPlanSummary
-from app.services.database import TripPlanRepository
+from app.api.Deps import TripPlanningPipeline, get_pipeline, get_trip_plan_repository
+from app.Config import settings
+from app.models.Schemas import HealthResponse, TripPlan, TripPlanRequest, TripPlanSummary
+from app.services.Database import TripPlanRepository
 
 router = APIRouter()
 

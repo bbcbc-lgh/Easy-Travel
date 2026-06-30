@@ -1,6 +1,6 @@
 import uvicorn
 
-from app.config import settings
+from app.Config import settings
 
 
 if __name__ == "__main__":
@@ -9,7 +9,7 @@ if __name__ == "__main__":
     if settings.app_env != "development" and host in {"127.0.0.1", "localhost"}:
         host = "0.0.0.0"
     uvicorn.run(
-        "app.api.main:app",
+        "app.api.Main:app",
         host=host,
         port=port,
         reload=settings.app_env == "development",
