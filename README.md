@@ -1,135 +1,84 @@
-# Easy Travel
+# Easy Travel 智能旅行规划系统
 
-Easy Travel is an AI-powered travel planning web app. Tell it where you want to go, when you are traveling, what you care about, and your budget level; it generates an editable itinerary with attractions, meals, hotels, weather, route visualization, and budget estimates.
+Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
 
-The project is built as a full-stack Agent application:
+项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过多 Agent 流程完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
 
-- FastAPI backend for API routing, validation, orchestration, and external service integration.
-- Vue 3 + TypeScript frontend for form input, itinerary review, editing, map display, and export.
-- A small multi-agent planning pipeline for attraction search, weather lookup, hotel recommendation, itinerary generation, and quality review.
-- Graceful fallback data when external API keys are missing or unavailable, so the app can still run locally.
+## 在线演示
 
-## Features
+https://stellar-compassion-production-bea1.up.railway.app
 
-- AI itinerary generation based on city, dates, preferences, budget, transport, and accommodation type.
-- AMap-backed attraction, meal, hotel, weather, route, and budget planning in one response.
-- AMap-based map visualization for attraction markers when a JS API key is configured.
-- Editable daily itinerary with move/delete actions for attractions.
-- SQLite persistence for generated plans, editable saved results, and local share links.
-- Built-in quality checks for repeated attractions, empty days, overloaded days, weather coverage, and candidate data sufficiency.
-- Export itinerary content as image or PDF.
-- Works without MySQL, Redis, or vector database.
+## 功能特性
 
-## Tech Stack
+- 根据城市、日期、偏好、预算、交通方式和住宿类型生成旅行计划。
+- 集成高德 Web Service API，支持景点、餐饮、酒店、天气、城市坐标和路线估算。
+- 支持 OpenAI 兼容接口生成结构化 JSON 行程，失败时自动切换到规则 fallback。
+- 支持无 API Key 本地运行，使用确定性样例数据完成演示和开发调试。
+- 使用 SQLite 持久化生成结果，支持历史列表、详情读取、编辑保存和本地分享链接。
+- 内置质量检查，覆盖重复景点、空行程、每日强度、天气覆盖和候选数量等问题。
+- 前端支持高德地图景点标记、每日路线距离/耗时展示、行程移动/删除和图片/PDF 导出。
 
-Backend:
+## 技术栈
+
+后端：
 
 - Python
 - FastAPI
 - Pydantic
 - httpx
-- OpenAI-compatible LLM API client
+- SQLite
+- OpenAI 兼容 LLM API
+- 高德 Web Service API
 
-Frontend:
+前端：
 
 - Vue 3
 - TypeScript
 - Vite
 - Ant Design Vue
-- AMap JS API
-- html2canvas + jsPDF
+- 高德 JavaScript API
+- html2canvas
+- jsPDF
 
-External services:
+## 系统流程
 
-- OpenAI-compatible LLM API
-- AMap Web Service API
-- AMap JavaScript API
-- SQLite
+```text
+用户输入旅行需求
+  -> 景点 Agent / 酒店 Agent / 餐饮 Agent / 天气 Agent 并行检索候选数据
+  -> 规划 Agent 生成每日行程
+  -> 高德路线估算补充日内交通信息
+  -> 质量检查 Agent 生成评分和提醒
+  -> SQLite 保存结果
+  -> 前端展示、编辑、分享和导出
+```
 
-## Project Structure
+## 项目结构
 
 ```text
 .
 ├── backend/
 │   ├── app/
-│   │   ├── agents/      # Attraction, weather, hotel, planner, and review agents
-│   │   ├── api/         # FastAPI routes and dependencies
-│   │   ├── models/      # Pydantic request/response schemas
-│   │   ├── services/    # LLM, AMap, and fallback data services
-│   │   └── config.py
-│   ├── tests/
+│   │   ├── agents/       # 景点、天气、酒店、餐饮、规划和质量检查 Agent
+│   │   ├── api/          # FastAPI 路由、依赖和应用入口
+│   │   ├── models/       # Pydantic 请求/响应模型
+│   │   ├── services/     # LLM、高德服务、SQLite 仓储和样例数据
+│   │   └── Config.py     # 后端配置
+│   ├── tests/            # 后端测试
 │   ├── requirements.txt
 │   └── run.py
 └── frontend/
     ├── src/
-    │   ├── router/
-    │   ├── services/
-    │   ├── styles/
-    │   ├── types/
-    │   └── views/
+    │   ├── router/       # 前端路由
+    │   ├── services/     # API client
+    │   ├── styles/       # 全局样式
+    │   ├── types/        # TypeScript 类型
+    │   └── views/        # 页面视图
     └── package.json
 ```
 
-## Configuration
+## 本地运行
 
-Backend configuration:
-
-```powershell
-cd backend
-Copy-Item .env.example .env
-```
-
-Fill in `backend/.env` as needed:
-
-```env
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_MODEL=gpt-4o-mini
-AMAP_WEB_SERVICE_KEY=
-DATABASE_PATH=data/easy_travel.sqlite3
-```
-
-Frontend configuration:
-
-```powershell
-cd frontend
-Copy-Item .env.example .env
-```
-
-Fill in `frontend/.env`:
-
-```env
-VITE_API_BASE_URL=http://localhost:8000/api
-VITE_AMAP_JS_KEY=
-```
-
-If you do not provide API keys, the backend will use deterministic sample data. This is useful for demos, tests, and offline development.
-
-SQLite is used through Python's built-in `sqlite3` module. No extra database server is required. If you want to inspect the local database manually on Windows, this project can be opened with `D:\SQLite\sqlite3.exe backend\data\easy_travel.sqlite3`.
-
-## AMap Web Service Scope
-
-The current backend needs these AMap Web Service API capabilities:
-
-- District search: resolve a city name to `adcode` and city center coordinates.
-- Place text search 2.0: search attractions, hotels, and restaurants by keyword, region, type code, pagination, and extended fields.
-- Place text search 1.0 fallback: use the older `/v3/place/text` response when 2.0 is unavailable.
-- Weather query: fetch forecast weather by city `adcode`.
-- Route planning: estimate daily hotel-to-attraction and attraction-to-attraction travel legs.
-
-Useful request examples to provide next:
-
-- `/v3/config/district` for city/adcode lookup.
-- `/v5/place/text` for scenic spots, parks, museums, landmarks, hotels, restaurants, and food streets.
-- `/v3/place/text` as a fallback request example.
-- `/v3/weather/weatherInfo` for forecast data.
-- `/v5/direction/driving`, `/v5/direction/walking`, and transit route examples.
-
-The frontend map uses AMap JavaScript API through `VITE_AMAP_JS_KEY`; keep that key in `frontend/.env`.
-
-## Run Locally
-
-### Backend
+### 1. 启动后端
 
 ```powershell
 cd backend
@@ -138,15 +87,19 @@ python -m venv .venv
 .\.venv\Scripts\python run.py
 ```
 
-API docs will be available at:
+后端默认运行在：
+
+```text
+http://localhost:8000
+```
+
+接口文档：
 
 ```text
 http://localhost:8000/docs
 ```
 
-Recommended Python version: 3.10-3.12. On Windows, Python 3.14 may require local Rust compilation for `pydantic-core`.
-
-### Frontend
+### 2. 启动前端
 
 ```powershell
 cd frontend
@@ -154,53 +107,54 @@ npm install
 npm run dev
 ```
 
-Open:
+前端默认运行在：
 
 ```text
 http://localhost:5173
 ```
 
-## Test and Build
+## 环境变量
 
-Backend tests:
+后端可在 `backend/.env` 中配置：
 
-```powershell
-cd backend
-.\.venv\Scripts\python -m pytest
+```env
+APP_NAME=Easy Travel
+API_HOST=127.0.0.1
+API_PORT=8000
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL=gpt-4o-mini
+
+AMAP_WEB_SERVICE_KEY=
+DATABASE_PATH=data/easy_travel.sqlite3
 ```
 
-Frontend production build:
+前端可在 `frontend/.env` 中配置：
 
-```powershell
-cd frontend
-npm run build
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_AMAP_JS_KEY=
 ```
 
-## API Overview
+说明：
 
-Health check:
+- `LLM_API_KEY` 为空时，后端会跳过大模型生成并使用规则 fallback。
+- `AMAP_WEB_SERVICE_KEY` 为空或请求失败时，后端会使用样例数据和本地距离估算。
+- `VITE_AMAP_JS_KEY` 为空时，前端不会加载高德地图，但仍可展示行程内容。
+
+## API 概览
 
 ```text
-GET /api/health
-```
-
-Generate travel plan:
-
-```text
+GET  /api/health
 POST /api/trip/plan
+GET  /api/trip/plans
+GET  /api/trip/plans/{plan_id}
+PUT  /api/trip/plans/{plan_id}
 ```
 
-Saved plans:
-
-```text
-GET /api/trip/plans
-GET /api/trip/plans/{plan_id}
-PUT /api/trip/plans/{plan_id}
-```
-
-After a plan is generated, the frontend opens `/result/{plan_id}`. That local link can be copied and reopened while the backend and SQLite database are available.
-
-Example request:
+示例请求：
 
 ```json
 {
@@ -214,8 +168,24 @@ Example request:
 }
 ```
 
-## Notes
+## 测试与构建
 
-- `backend/.env` and `frontend/.env` are intentionally ignored by Git.
-- AMap Web Service can be sensitive to network routing. If you are using a VPN and the AMap request fails, the app will fall back to sample data instead of failing the whole planning flow.
-- The first production build may show a large chunk warning because Ant Design Vue and map/export libraries are bundled into the app. It does not prevent the build from succeeding.
+后端测试：
+
+```powershell
+cd backend
+.\.venv\Scripts\python -m pytest
+```
+
+前端构建：
+
+```powershell
+cd frontend
+npm run build
+```
+
+## 开发说明
+
+- 后端使用 Python 内置 `sqlite3` 模块，无需单独安装数据库服务。
+- 外部 API 不可用时，系统会降级到本地样例数据，便于离线开发和演示。
+- 生产构建中 Ant Design Vue、地图和导出相关库会带来较大的前端包体积，这是当前实现的正常现象。
