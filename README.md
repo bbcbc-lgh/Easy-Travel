@@ -2,7 +2,7 @@
 
 Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
 
-项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过多 Agent 流程完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
+项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过 LangGraph 编排多 Agent 流程，完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
 
 ## 在线演示
 
@@ -27,6 +27,7 @@ https://stellar-compassion-production-bea1.up.railway.app
 - Pydantic
 - httpx
 - SQLite
+- LangGraph
 - OpenAI 兼容 LLM API
 - 高德 Web Service API
 
@@ -44,10 +45,10 @@ https://stellar-compassion-production-bea1.up.railway.app
 
 ```text
 用户输入旅行需求
-  -> 景点 Agent / 酒店 Agent / 餐饮 Agent / 天气 Agent 并行检索候选数据
-  -> 规划 Agent 生成每日行程
-  -> 高德路线估算补充日内交通信息
-  -> 质量检查 Agent 生成评分和提醒
+  -> LangGraph collect_candidates 节点并行调用景点 / 酒店 / 餐饮 / 天气 Agent
+  -> LangGraph create_plan 节点调用规划 Agent 生成每日行程
+  -> LangGraph enrich_routes 节点补充日内交通信息
+  -> LangGraph review_plan 节点生成评分和提醒
   -> SQLite 保存结果
   -> 前端展示、编辑、分享和导出
 ```
@@ -58,7 +59,7 @@ https://stellar-compassion-production-bea1.up.railway.app
 .
 ├── backend/
 │   ├── app/
-│   │   ├── agents/       # 景点、天气、酒店、餐饮、规划和质量检查 Agent
+│   │   ├── agents/       # 景点、天气、酒店、餐饮、规划、质量检查 Agent 和 LangGraph 编排
 │   │   ├── api/          # FastAPI 路由、依赖和应用入口
 │   │   ├── models/       # Pydantic 请求/响应模型
 │   │   ├── services/     # LLM、高德服务、SQLite 仓储和样例数据
@@ -128,6 +129,7 @@ LLM_BASE_URL=
 LLM_MODEL=gpt-4o-mini
 
 AMAP_WEB_SERVICE_KEY=
+USE_SAMPLE_DATA=false
 DATABASE_PATH=data/easy_travel.sqlite3
 ```
 
@@ -142,6 +144,7 @@ VITE_AMAP_JS_KEY=
 
 - `LLM_API_KEY` 为空时，后端会跳过大模型生成并使用规则 fallback。
 - `AMAP_WEB_SERVICE_KEY` 为空或请求失败时，后端会使用样例数据和本地距离估算。
+- `USE_SAMPLE_DATA=true` 时，后端会强制跳过 LLM 和高德外部调用，适合本地自检、CI 和离线演示。
 - `VITE_AMAP_JS_KEY` 为空时，前端不会加载高德地图，但仍可展示行程内容。
 
 ## API 概览

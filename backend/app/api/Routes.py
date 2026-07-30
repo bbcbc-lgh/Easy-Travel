@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.Deps import TripPlanningPipeline, get_pipeline, get_trip_plan_repository
@@ -29,21 +27,8 @@ async def create_trip_plan(
     pipeline: TripPlanningPipeline = Depends(get_pipeline),
     repository: TripPlanRepository = Depends(get_trip_plan_repository),
 ) -> TripPlan:
-    attractions_task = pipeline.attraction_agent.run(request)
-    weather_task = pipeline.weather_agent.run(request)
-    hotels_task = pipeline.hotel_agent.run(request)
-    meals_task = pipeline.meal_agent.run(request)
-
-    attractions, weather_info, hotels, meals = await asyncio.gather(
-        attractions_task,
-        weather_task,
-        hotels_task,
-        meals_task,
-    )
-    plan = await pipeline.planner_agent.run(request, attractions, hotels, weather_info, meals)
-    plan = await pipeline.amap_service.enrich_daily_routes(plan, request)
-    reviewed = pipeline.review_agent.run(request, plan, candidate_count=len(attractions))
-    return repository.save_plan(request, reviewed)
+    plan = await pipeline.run(request)
+    return repository.save_plan(request, plan)
 
 
 @router.get("/trip/plans", response_model=list[TripPlanSummary])

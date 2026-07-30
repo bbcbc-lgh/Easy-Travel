@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
 
     amap_web_service_key: str = ""
+    use_sample_data: bool = False
 
     database_path: str = "data/easy_travel.sqlite3"
 
@@ -31,11 +32,11 @@ class Settings(BaseSettings):
 
     @property
     def has_llm(self) -> bool:
-        return bool(self.llm_api_key)
+        return bool(self.llm_api_key) and not self.use_sample_data
 
     @property
     def has_amap(self) -> bool:
-        return bool(self.amap_web_service_key)
+        return bool(self.amap_web_service_key) and not self.use_sample_data
 
 
 @lru_cache
