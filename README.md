@@ -4,10 +4,6 @@ Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户�
 
 项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过 LangGraph 编排多 Agent 流程，完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
 
-## 在线演示
-
-https://stellar-compassion-production-bea1.up.railway.app
-
 ## 功能特性
 
 - 根据城市、日期、偏好、预算、交通方式和住宿类型生成旅行计划。
@@ -120,15 +116,15 @@ http://localhost:5173
 
 ```env
 APP_NAME=Easy Travel
-API_HOST=127.0.0.1
-API_PORT=8000
+FASTAPI_API_HOST=127.0.0.1
+FASTAPI_API_PORT=8000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
 LLM_API_KEY=
 LLM_BASE_URL=
 LLM_MODEL=gpt-4o-mini
 
-AMAP_WEB_SERVICE_KEY=
+FASTAPI_AMAP_WEB_KEY=
 USE_SAMPLE_DATA=false
 DATABASE_PATH=data/easy_travel.sqlite3
 ```
@@ -143,7 +139,7 @@ VITE_AMAP_JS_KEY=
 说明：
 
 - `LLM_API_KEY` 为空时，后端会跳过大模型生成并使用规则 fallback。
-- `AMAP_WEB_SERVICE_KEY` 为空或请求失败时，后端会使用样例数据和本地距离估算。
+- `FASTAPI_AMAP_WEB_KEY` 为空或请求失败时，后端会使用样例数据和本地距离估算。
 - `USE_SAMPLE_DATA=true` 时，后端会强制跳过 LLM 和高德外部调用，适合本地自检、CI 和离线演示。
 - `VITE_AMAP_JS_KEY` 为空时，前端不会加载高德地图，但仍可展示行程内容。
 

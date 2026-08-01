@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
@@ -10,15 +10,15 @@ ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 class Settings(BaseSettings):
     app_name: str = "Easy Travel"
     app_env: str = "development"
-    api_host: str = "127.0.0.1"
-    api_port: int = 8000
+    api_host: str = Field("127.0.0.1", validation_alias="FASTAPI_API_HOST")
+    api_port: int = Field(8000, validation_alias="FASTAPI_API_PORT")
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = "gpt-4o-mini"
 
-    amap_web_service_key: str = ""
+    amap_web_service_key: str = Field("", validation_alias="FASTAPI_AMAP_WEB_KEY")
     use_sample_data: bool = False
 
     database_path: str = "data/easy_travel.sqlite3"

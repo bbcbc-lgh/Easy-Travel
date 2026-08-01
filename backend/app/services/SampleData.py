@@ -38,6 +38,8 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
         ("观景台", "适合俯瞰城市天际线", "城市地标", 120, 80, 4.3),
         ("特色市集", "适合购买伴手礼和体验本地烟火气", "美食购物", 30, 90, 4.2),
     ]
+    # These records deliberately remain generic. They are offline preview data,
+    # not actual venues, and must never be represented as booking/navigation data.
     return [
         Attraction(
             name=f"{city}{name}",
@@ -51,6 +53,7 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
             category=category,
             rating=rating,
             ticket_price=price,
+            source="sample",
         )
         for index, (name, description, category, price, duration, rating) in enumerate(templates)
     ]
@@ -58,28 +61,35 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
 
 def sample_hotels(city: str, accommodation: str, budget: str) -> list[Hotel]:
     center = city_center(city)
-    price_map = {"经济": 260, "中等": 460, "舒适": 720, "豪华": 1200}
-    nightly = price_map.get(budget, 460)
+    accommodation_prices = {
+        "\u9752\u5e74\u65c5\u820d": 120,
+        "\u7ecf\u6d4e\u578b\u9152\u5e97": 280,
+        "\u8212\u9002\u578b\u9152\u5e97": 520,
+        "\u9ad8\u7aef\u9152\u5e97": 980,
+    }
+    nightly = accommodation_prices.get(accommodation, {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460))
     return [
         Hotel(
-            name=f"{city}{accommodation}精选酒店",
-            address=f"{city}游客集散中心附近",
+            name=f"{city}{accommodation}演示住宿",
+            address="离线演示数据，暂无可导航地址",
             location=Location(longitude=center.longitude + 0.01, latitude=center.latitude + 0.008),
             price_range=f"{nightly - 80}-{nightly + 120} 元/晚",
             rating="4.6",
             distance="距主要景点约 2 公里",
             type=accommodation,
             estimated_cost=nightly,
+            source="sample",
         ),
         Hotel(
-            name=f"{city}城市便捷酒店",
-            address=f"{city}地铁站旁",
+            name=f"{city}交通便利演示住宿",
+            address="离线演示数据，暂无可导航地址",
             location=Location(longitude=center.longitude - 0.012, latitude=center.latitude - 0.006),
             price_range=f"{max(nightly - 160, 180)}-{nightly + 60} 元/晚",
             rating="4.4",
             distance="距地铁站约 300 米",
             type="交通便利",
             estimated_cost=max(nightly - 100, 200),
+            source="sample",
         ),
     ]
 
@@ -88,9 +98,9 @@ def sample_meals(city: str, budget: str) -> list[Meal]:
     cost_map = {"经济": (20, 45, 55), "中等": (35, 75, 90), "舒适": (55, 120, 160), "豪华": (90, 220, 320)}
     breakfast, lunch, dinner = cost_map.get(budget, (35, 75, 90))
     return [
-        Meal(type="breakfast", name=f"{city}本地早餐", description="靠近酒店，节省早晨通勤时间", estimated_cost=breakfast),
-        Meal(type="lunch", name=f"{city}特色午餐", description="安排在上午景点附近", estimated_cost=lunch),
-        Meal(type="dinner", name=f"{city}风味晚餐", description="适合结束一天行程后慢慢用餐", estimated_cost=dinner),
+        Meal(type="breakfast", name=f"{city}早餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请在酒店周边选择评分较高、营业中的早餐店。", estimated_cost=breakfast, source="sample"),
+        Meal(type="lunch", name=f"{city}午餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请在上午景点附近按实时营业状态选择餐厅。", estimated_cost=lunch, source="sample"),
+        Meal(type="dinner", name=f"{city}晚餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请结合返程路线和实时评分选择晚餐。", estimated_cost=dinner, source="sample"),
     ]
 
 
@@ -108,6 +118,8 @@ def sample_weather(start_date: str, days: int) -> list[WeatherInfo]:
             night_temp=16 + index,
             wind_direction="东南",
             wind_power="3级",
+            source="sample",
+            notice="\u6f14\u793a\u5929\u6c14\uff0c\u4ec5\u7528\u4e8e\u79bb\u7ebf\u9884\u89c8\uff1b\u51fa\u884c\u524d\u8bf7\u67e5\u8be2\u5b9e\u65f6\u5929\u6c14\u3002",
         )
         for index in range(days)
     ]

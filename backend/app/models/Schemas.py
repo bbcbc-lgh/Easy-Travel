@@ -19,6 +19,7 @@ class Attraction(BaseModel):
     rating: float | None = Field(None, ge=0, le=5, description="评分")
     image_url: str | None = Field(None, description="图片URL")
     ticket_price: int = Field(0, ge=0, description="门票价格(元)")
+    source: Literal["amap", "sample"] = Field("sample", description="place data source")
 
 
 class Meal(BaseModel):
@@ -28,6 +29,7 @@ class Meal(BaseModel):
     location: Location | None = Field(None, description="经纬度坐标")
     description: str | None = Field(None, description="描述")
     estimated_cost: int = Field(0, ge=0, description="预估费用(元)")
+    source: Literal["amap", "sample"] = Field("sample", description="meal data source")
 
 
 class Hotel(BaseModel):
@@ -39,6 +41,7 @@ class Hotel(BaseModel):
     distance: str = Field("", description="距离景点距离")
     type: str = Field("", description="酒店类型")
     estimated_cost: int = Field(0, ge=0, description="预估费用(元/晚)")
+    source: Literal["amap", "sample"] = Field("sample", description="hotel data source")
 
 
 class Budget(BaseModel):
@@ -97,6 +100,7 @@ class WeatherInfo(BaseModel):
     wind_power: str = Field(..., description="风力")
     forecast_available: bool = Field(True, description="是否有可信天气预报")
     notice: str | None = Field(None, description="天气提示")
+    source: Literal["amap", "open_meteo", "sample", "unavailable"] = Field("unavailable", description="weather data source")
 
     @field_validator("day_temp", "night_temp", mode="before")
     @classmethod
@@ -142,6 +146,7 @@ class TripPlan(BaseModel):
     overall_suggestions: str = Field(..., description="总体建议")
     budget: Budget | None = Field(None, description="预算信息")
     quality: PlanQuality | None = Field(None, description="行程质量评估")
+    data_notices: list[str] = Field(default_factory=list, description="data availability notices")
 
 
 class HealthResponse(BaseModel):

@@ -13,6 +13,7 @@ export interface Attraction {
   rating?: number | null
   image_url?: string | null
   ticket_price: number
+  source: 'amap' | 'sample'
 }
 
 export interface Meal {
@@ -22,6 +23,7 @@ export interface Meal {
   location?: Location | null
   description?: string | null
   estimated_cost: number
+  source: 'amap' | 'sample'
 }
 
 export interface Hotel {
@@ -33,6 +35,7 @@ export interface Hotel {
   distance: string
   type: string
   estimated_cost: number
+  source: 'amap' | 'sample'
 }
 
 export interface Budget {
@@ -79,6 +82,7 @@ export interface WeatherInfo {
   wind_power: string
   forecast_available: boolean
   notice?: string | null
+  source: 'amap' | 'open_meteo' | 'sample' | 'unavailable'
 }
 
 export interface TripPlanRequest {
@@ -102,6 +106,7 @@ export interface TripPlan {
   overall_suggestions: string
   budget?: Budget | null
   quality?: PlanQuality | null
+  data_notices: string[]
 }
 
 export interface TripPlanSummary {

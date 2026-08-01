@@ -6,21 +6,34 @@
         返回
       </a-button>
       <a-menu v-model:selectedKeys="selectedKeys" mode="inline" @click="scrollToSection">
-        <a-menu-item key="overview"><LayoutDashboard :size="16" /> 行程概览</a-menu-item>
-        <a-menu-item key="quality"><ShieldCheck :size="16" /> 质量检查</a-menu-item>
         <a-menu-item key="budget"><WalletCards :size="16" /> 预算明细</a-menu-item>
         <a-menu-item key="map"><MapPinned :size="16" /> 地图路线</a-menu-item>
         <a-menu-item key="days"><CalendarDays :size="16" /> 每日行程</a-menu-item>
         <a-menu-item key="weather"><CloudSun :size="16" /> 天气信息</a-menu-item>
+        <a-menu-item v-if="qualityWarnings.length" key="quality"><ShieldCheck :size="16" /> 行程提醒</a-menu-item>
       </a-menu>
     </aside>
 
     <section class="result-content" id="trip-plan-content">
       <header class="result-header" id="overview">
         <div>
-          <p class="eyebrow">Trip Plan</p>
-          <h1>{{ tripPlan.city }} {{ tripPlan.days.length }} 天游</h1>
+          <p class="eyebrow">行程计划</p>
+          <h1>{{ tripPlan.city }} <span class="trip-day-count">{{ tripPlan.days.length }}</span> 天游</h1>
           <p>{{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}</p>
+          <div class="overview-metrics">
+            <div>
+              <span>{{ allAttractions.length }}</span>
+              <small>景点</small>
+            </div>
+            <div>
+              <span>{{ tripPlan.weather_info.length }}</span>
+              <small>天气</small>
+            </div>
+            <div v-if="tripPlan.budget">
+              <span>{{ tripPlan.budget.total }}</span>
+              <small>元预算</small>
+            </div>
+          </div>
         </div>
         <div class="header-actions" data-html2canvas-ignore>
           <a-button @click="toggleEditMode">
@@ -54,28 +67,14 @@
         </div>
       </header>
 
-      <a-alert class="suggestion" :message="tripPlan.overall_suggestions" type="info" show-icon />
-
-      <section class="section-block quality-block" id="quality" v-if="tripPlan.quality">
-        <div class="section-title-row">
-          <h2>质量检查</h2>
-          <a-tag :color="qualityColor">{{ tripPlan.quality.score }} 分</a-tag>
-        </div>
-        <div class="quality-grid">
-          <div v-for="item in qualityChecks" :key="item.key" class="quality-item">
-            <CheckCircle2 v-if="item.passed" :size="18" class="quality-pass" />
-            <CircleAlert v-else :size="18" class="quality-warn" />
-            <span>{{ item.label }}</span>
-          </div>
-        </div>
-        <a-alert
-          v-if="tripPlan.quality.warnings.length"
-          class="quality-warning"
-          type="warning"
-          show-icon
-          :message="tripPlan.quality.warnings.join(' ')"
-        />
-      </section>
+      <a-alert
+        v-for="notice in tripPlan.data_notices || []"
+        :key="notice"
+        class="data-notice"
+        :message="notice"
+        type="warning"
+        show-icon
+      />
 
       <section class="section-block" id="budget" v-if="tripPlan.budget">
         <h2>预算明细</h2>
@@ -86,10 +85,14 @@
           <a-statistic title="交通费用" :value="tripPlan.budget.total_transportation" suffix="元" />
           <a-statistic class="total-budget" title="预估总费用" :value="tripPlan.budget.total" suffix="元" />
         </div>
+        <p class="budget-note">住宿按 {{ hotelNights }} 晚计算（{{ tripPlan.days.length }} 天行程通常为 {{ hotelNights }} 晚）；不含往返大交通、购物和个人消费。预算档位不会覆盖你单独选择的住宿与交通方式。</p>
       </section>
 
       <section class="section-block" id="map" data-html2canvas-ignore>
-        <h2>地图路线</h2>
+        <div class="section-title-row">
+          <h2>地图路线</h2>
+          <a-tag>{{ allAttractions.length }} 个地点</a-tag>
+        </div>
         <div class="map-panel">
           <div id="amap-container" class="map-canvas"></div>
           <div v-if="!mapReady" class="map-fallback">
@@ -102,28 +105,34 @@
       <section class="section-block" id="days">
         <h2>每日行程</h2>
         <div class="day-list">
-          <article v-for="(day, dayIndex) in tripPlan.days" :key="day.date" class="day-card">
-            <div class="day-card-header">
+          <article v-for="(day, dayIndex) in tripPlan.days" :key="day.date" class="day-card" :class="{ 'is-collapsed': !isDayExpanded(dayIndex) }">
+            <button class="day-card-header" type="button" @click="toggleDay(dayIndex)">
               <div>
-                <span>Day {{ day.day_index + 1 }}</span>
+                <span>第 {{ day.day_index + 1 }} 天</span>
                 <h3>{{ day.date }}</h3>
-                <p>{{ day.description }}</p>
               </div>
-              <a-tag>{{ day.transportation }}</a-tag>
-            </div>
+              <div class="day-header-meta">
+                <a-tag>{{ day.transportation }}</a-tag>
+                <ChevronDown :size="18" class="day-toggle-icon" />
+              </div>
+            </button>
 
-            <div v-if="day.hotel" class="hotel-strip">
+            <template v-if="isDayExpanded(dayIndex)">
+              <div v-if="day.hotel" class="hotel-strip">
               <Hotel :size="18" />
-              <span>{{ day.hotel.name }}</span>
-              <small>{{ day.hotel.price_range }} · {{ day.hotel.distance }}</small>
+              <div>
+                <strong>{{ day.hotel.name }}</strong>
+                <small>{{ day.hotel.address }}  ·  {{ day.hotel.price_range }}  ·  约 {{ day.hotel.estimated_cost }} 元/晚</small>
+              </div>
+              <a-tag v-if="day.hotel.source === 'sample'" color="warning">演示数据</a-tag>
             </div>
 
-            <div class="attraction-list">
+              <div class="attraction-list">
               <div v-for="(attraction, attractionIndex) in day.attractions" :key="`${day.date}-${attraction.name}`" class="attraction-item">
+                <div class="attraction-rank">{{ attractionIndex + 1 }}</div>
                 <div>
                   <h4>{{ attraction.name }}</h4>
-                  <p>{{ attraction.description }}</p>
-                  <small>{{ attraction.category }} · {{ attraction.visit_duration }} 分钟 · 门票 {{ attraction.ticket_price }} 元</small>
+                  <small>{{ attraction.address }} · 建议 {{ attraction.visit_duration }} 分钟 · 门票 {{ attraction.ticket_price }} 元</small>
                 </div>
                 <div v-if="editMode" class="edit-buttons" data-html2canvas-ignore>
                   <a-button size="small" :disabled="attractionIndex === 0" @click="moveAttraction(dayIndex, attractionIndex, 'up')">
@@ -137,19 +146,30 @@
                   </a-button>
                 </div>
               </div>
-            </div>
+              </div>
 
-            <div class="meal-row">
-              <a-tag v-for="meal in day.meals" :key="meal.type">{{ meal.name }} {{ meal.estimated_cost }} 元</a-tag>
-            </div>
+              <div class="meal-list">
+              <div v-for="meal in day.meals" :key="`${day.date}-${meal.type}-${meal.name}`" class="meal-item">
+                <div>
+                  <span>{{ mealTypeLabel(meal.type) }}</span>
+                  <strong>{{ meal.name }}</strong>
+                  <small>{{ meal.address || meal.description || '暂无可导航地址' }}</small>
+                </div>
+                <div class="meal-cost">
+                  <a-tag v-if="meal.source === 'sample'" color="warning">演示数据</a-tag>
+                  <span>约 {{ meal.estimated_cost }} 元</span>
+                </div>
+              </div>
+              </div>
 
-            <div v-if="(day.routes || []).length" class="route-list">
+              <div v-if="(day.routes || []).length" class="route-list">
               <div v-for="route in day.routes || []" :key="`${day.date}-${route.origin}-${route.destination}`">
                 <Route :size="15" />
                 <span>{{ route.origin }} → {{ route.destination }}</span>
                 <small>{{ formatDistance(route.distance_meters) }} · 约 {{ route.duration_minutes }} 分钟 · {{ route.mode }}</small>
               </div>
-            </div>
+              </div>
+            </template>
           </article>
         </div>
       </section>
@@ -160,12 +180,20 @@
           <div v-for="weather in tripPlan.weather_info" :key="weather.date" class="weather-card">
             <span>{{ weather.date }}</span>
             <strong>{{ weather.day_weather }}</strong>
+            <a-tag :color="weather.forecast_available !== false ? 'blue' : 'default'">{{ weatherSourceLabel(weather.source) }}</a-tag>
             <small v-if="weather.forecast_available !== false">
               {{ weather.night_temp }} 至 {{ weather.day_temp }} ℃ · {{ weather.wind_direction }}风 {{ weather.wind_power }}
             </small>
-            <small v-else>{{ weather.notice || '行程日期太久远，无法保证查询天气。' }}</small>
+            <small v-else>{{ weather.notice || '当前日期暂无可用预报，请在临近出行时再查。' }}</small>
           </div>
         </div>
+      </section>
+
+      <section v-if="qualityWarnings.length" class="section-block" id="quality">
+        <div class="section-title-row">
+          <h2>行程提醒</h2>
+        </div>
+        <a-alert v-for="warning in qualityWarnings" :key="warning" class="quality-warning" :message="warning" type="warning" show-icon />
       </section>
     </section>
   </main>
@@ -185,12 +213,10 @@ import {
   ArrowLeft,
   ArrowUp,
   CalendarDays,
-  CheckCircle2,
-  CircleAlert,
+  ChevronDown,
   CloudSun,
   Download,
   Hotel,
-  LayoutDashboard,
   Link2,
   MapPinned,
   Pencil,
@@ -219,26 +245,9 @@ const mapStatus = ref('正在准备地图')
 const routePlanId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
-const qualityLabels: Record<string, string> = {
-  no_duplicate_attractions: '景点不重复',
-  all_days_have_attractions: '每日有行程',
-  daily_duration_reasonable: '每日强度合理',
-  weather_complete: '天气覆盖完整',
-  enough_candidates: '候选景点充足'
-}
-const qualityChecks = computed(() =>
-  Object.entries(tripPlan.value?.quality?.checks || {}).map(([key, passed]) => ({
-    key,
-    passed,
-    label: qualityLabels[key] || key
-  }))
-)
-const qualityColor = computed(() => {
-  const score = tripPlan.value?.quality?.score || 0
-  if (score >= 85) return 'green'
-  if (score >= 70) return 'gold'
-  return 'red'
-})
+const hotelNights = computed(() => Math.max((tripPlan.value?.days.length || 1) - 1, 1))
+const expandedDayIndices = ref<number[]>([0])
+const qualityWarnings = computed(() => tripPlan.value?.quality?.warnings || [])
 let mapInstance: { destroy: () => void } | null = null
 
 function loadInitialPlan(): TripPlan | null {
@@ -249,6 +258,16 @@ function loadInitialPlan(): TripPlan | null {
 function scrollToSection({ key }: { key: string }) {
   selectedKeys.value = [key]
   document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function isDayExpanded(dayIndex: number) {
+  return expandedDayIndices.value.includes(dayIndex)
+}
+
+function toggleDay(dayIndex: number) {
+  expandedDayIndices.value = isDayExpanded(dayIndex)
+    ? expandedDayIndices.value.filter((index) => index !== dayIndex)
+    : [...expandedDayIndices.value, dayIndex]
 }
 
 function toggleEditMode() {
@@ -308,6 +327,14 @@ function formatDistance(value: number) {
     return `${(value / 1000).toFixed(1)} 公里`
   }
   return `${value} 米`
+}
+
+function mealTypeLabel(type: string) {
+  return { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' }[type] || '餐饮'
+}
+
+function weatherSourceLabel(source?: string) {
+  return { amap: '高德天气', open_meteo: '天气预报', sample: '演示天气', unavailable: '暂无预报' }[source || 'unavailable'] || '暂无预报'
 }
 
 async function copyShareLink() {
@@ -375,7 +402,11 @@ async function initMap() {
 async function exportAsImage() {
   const element = document.getElementById('trip-plan-content')
   if (!element || !tripPlan.value) return
+  const visibleDays = [...expandedDayIndices.value]
+  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
+  await nextTick()
   const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
+  expandedDayIndices.value = visibleDays
   const link = document.createElement('a')
   link.download = `${tripPlan.value.city}旅行计划.png`
   link.href = canvas.toDataURL('image/png')
@@ -385,7 +416,11 @@ async function exportAsImage() {
 async function exportAsPDF() {
   const element = document.getElementById('trip-plan-content')
   if (!element || !tripPlan.value) return
+  const visibleDays = [...expandedDayIndices.value]
+  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
+  await nextTick()
   const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
+  expandedDayIndices.value = visibleDays
   const pdf = new jsPDF('p', 'mm', 'a4')
   const imgData = canvas.toDataURL('image/png')
   const imgWidth = 210

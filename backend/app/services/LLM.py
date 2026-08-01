@@ -13,7 +13,8 @@ class LLMService:
             AsyncOpenAI(
                 api_key=settings.llm_api_key,
                 base_url=settings.llm_base_url or None,
-                timeout=30,
+                timeout=8,
+                max_retries=0,
             )
             if settings.has_llm
             else None

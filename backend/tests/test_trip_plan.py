@@ -1,12 +1,43 @@
 from fastapi.testclient import TestClient
+from unittest.mock import patch
+import pytest
 
 from app.agents.ReviewAgent import ReviewAgent
+from app.api.Deps import get_pipeline
 from app.api.Main import app
+from app.Config import Settings
 from app.models.Schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
 from app.services.AMap import AMapService
+from app.services.LLM import LLMService
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def use_sample_data_for_api_tests() -> None:
+    get_pipeline.cache_clear()
+    with patch("app.api.Deps.settings.use_sample_data", True):
+        yield
+    get_pipeline.cache_clear()
+
+
+def test_llm_service_disables_retries_for_fast_fallback() -> None:
+    settings = Settings(
+        llm_api_key="test-key",
+        llm_base_url="https://example.test",
+        use_sample_data=False,
+    )
+
+    with patch("app.services.LLM.AsyncOpenAI") as mock_client:
+        LLMService(settings)
+
+    mock_client.assert_called_once_with(
+        api_key="test-key",
+        base_url="https://example.test",
+        timeout=8,
+        max_retries=0,
+    )
 
 
 def test_health_returns_service_flags() -> None:
@@ -190,3 +221,22 @@ def test_amap_attraction_filter_rejects_restaurants() -> None:
         is False
     )
     assert AMapService._looks_like_non_attraction_name("四季椰林椰子鸡(卓悦中心店)") is True
+    assert AMapService._is_attraction_poi({"type": "科教文化服务;学校;职业技术学校"}) is False
+    assert AMapService._is_attraction_poi({"type": "科教文化服务;培训机构;培训机构"}) is False
+
+
+def test_food_preference_is_not_used_to_search_attractions() -> None:
+    request = TripPlanRequest(
+        city="贵阳",
+        start_date="2026-07-01",
+        days=4,
+        preferences="美食、历史文化",
+        budget="中等",
+        transportation="公共交通",
+        accommodation="经济型酒店",
+    )
+
+    keywords = AMapService._build_attraction_keywords(request)
+
+    assert all("美食" not in keyword for keyword in keywords)
+    assert "贵阳 历史文化" in keywords

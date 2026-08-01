@@ -19,9 +19,9 @@ class PlannerAgent:
     ) -> TripPlan:
         meal_candidates = meals or sample_meals(request.city, request.budget)
         llm_plan = await self._try_llm_plan(request, attractions, hotels, weather_info, meal_candidates)
-        if llm_plan is not None:
-            return llm_plan
-        return self._fallback_plan(request, attractions, hotels, weather_info, meal_candidates)
+        if llm_plan is not None and self._is_grounded_plan(llm_plan, request, attractions, hotels, meal_candidates):
+            return self._attach_data_notices(llm_plan)
+        return self._attach_data_notices(self._fallback_plan(request, attractions, hotels, weather_info, meal_candidates))
 
     async def _try_llm_plan(
         self,
@@ -47,7 +47,7 @@ class PlannerAgent:
             f"候选酒店：{[item.model_dump() for item in hotels[:3]]}\n"
             f"候选餐饮：{[item.model_dump() for item in meals[:12]]}\n"
             f"天气：{[item.model_dump() for item in weather_info]}\n"
-            "请合理分配每天 1-3 个景点，优先使用候选餐饮和候选酒店。候选景点不足时可以减少每日景点数量，不要重复景点。"
+            "请合理分配每天 1-3 个景点，优先使用候选餐饮和候选酒店。候选景点不足时，明确安排为自由活动或休息日，不要编造或重复景点。"
         )
         payload = await self.llm_service.generate_json(system_prompt, user_prompt)
         if payload is None:
@@ -56,6 +56,42 @@ class PlannerAgent:
             return TripPlan.model_validate(payload)
         except Exception:
             return None
+
+
+    @staticmethod
+    def _is_grounded_plan(
+        plan: TripPlan,
+        request: TripPlanRequest,
+        attractions: list[Attraction],
+        hotels: list[Hotel],
+        meals: list[Meal],
+    ) -> bool:
+        if len(plan.days) != request.days:
+            return False
+        attraction_names = {item.name for item in attractions}
+        hotel_names = {item.name for item in hotels}
+        meal_names = {item.name for item in meals}
+        planned_attractions = [item.name for day in plan.days for item in day.attractions]
+        if any(name not in attraction_names for name in planned_attractions) or len(planned_attractions) != len(set(planned_attractions)):
+            return False
+        for day in plan.days:
+            if day.hotel and day.hotel.name not in hotel_names:
+                return False
+            if len(day.meals) != 3 or any(meal.name not in meal_names for meal in day.meals):
+                return False
+        return True
+
+    @staticmethod
+    def _attach_data_notices(plan: TripPlan) -> TripPlan:
+        notices: list[str] = []
+        place_items = [item for day in plan.days for item in [*day.attractions, *day.meals] if item.source == "sample"]
+        place_items.extend(day.hotel for day in plan.days if day.hotel and day.hotel.source == "sample")
+        if place_items:
+            notices.append("\u5b9e\u65f6\u5730\u70b9\u6570\u636e\u4e0d\u8db3\uff1a\u5f53\u524d\u5c55\u793a\u7684\u6a21\u62df\u5019\u9009\u4ec5\u4f9b\u6f14\u793a\uff0c\u4e0d\u53ef\u7528\u4e8e\u5bfc\u822a\u6216\u9884\u8ba2\u3002")
+        if any(not weather.forecast_available for weather in plan.weather_info):
+            notices.append("\u884c\u7a0b\u542b\u6709\u65e0\u6cd5\u786e\u8ba4\u7684\u5929\u6c14\u65e5\u671f\uff0c\u8bf7\u51fa\u884c\u524d\u518d\u6b21\u67e5\u8be2\u3002")
+        plan.data_notices = notices
+        return plan
 
     def _fallback_plan(
         self,
@@ -81,11 +117,16 @@ class PlannerAgent:
             attraction_cursor += target_count
             day_meals = self._pick_day_meals(meals, meal_cursor, request)
             meal_cursor += len(day_meals)
+            day_description = f"第 {day_index + 1} 天围绕 {request.preferences} 安排，节奏适中，预留休息时间。"
+            if not day_attractions:
+                day_description = "候选景点不足，今天预留为自由探索、休息或在出发前补充真实地点后再安排。"
+            elif len(day_attractions) == 1:
+                day_description = f"第 {day_index + 1} 天以 {day_attractions[0].name} 为主，余下时间留给周边慢行和休息。"
             days.append(
                 DayPlan(
                     date=current_date.isoformat(),
                     day_index=day_index,
-                    description=f"第 {day_index + 1} 天围绕 {request.preferences} 安排，节奏适中，预留休息时间。",
+                    description=day_description,
                     transportation=request.transportation,
                     accommodation=request.accommodation,
                     hotel=selected_hotel,
@@ -138,7 +179,7 @@ class PlannerAgent:
     @staticmethod
     def _calculate_budget(days: list[DayPlan], request: TripPlanRequest) -> Budget:
         attractions_total = sum(item.ticket_price for day in days for item in day.attractions)
-        hotel_nights = max(request.days - 1, 1)
+        hotel_nights = max(request.days - 1, 0)
         hotel_cost = (days[0].hotel.estimated_cost if days and days[0].hotel else 0) * hotel_nights
         meals_total = sum(meal.estimated_cost for day in days for meal in day.meals)
         transport_unit = {"公共交通": 45, "打车": 120, "自驾": 180}.get(request.transportation, 70)

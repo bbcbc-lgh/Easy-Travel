@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Iterable
 from datetime import timedelta
 from math import asin, cos, radians, sin, sqrt
@@ -7,7 +8,7 @@ import httpx
 
 from app.Config import Settings
 from app.models.Schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
-from app.services.SampleData import sample_attractions, sample_hotels, sample_meals, sample_weather
+from app.services.SampleData import city_center, sample_attractions, sample_hotels, sample_meals, sample_weather
 
 
 class AMapService:
@@ -26,7 +27,7 @@ class AMapService:
                 city=request.city,
                 keywords=self._build_attraction_keywords(request),
                 types="110000|110100|110200|140000|140100",
-                target_count=target_count * 3,
+                target_count=target_count * 2,
             )
         except httpx.HTTPError:
             return await self._fallback_attractions(request)
@@ -57,6 +58,7 @@ class AMapService:
                     category=category,
                     rating=self._poi_rating(poi),
                     ticket_price=self._estimate_ticket_price(category),
+                    source="amap",
                 )
             )
             if len(attractions) >= target_count:
@@ -73,7 +75,7 @@ class AMapService:
                 city=request.city,
                 keywords=self._build_hotel_keywords(request),
                 types="100000|100100|100101|100102|100105",
-                target_count=18,
+                target_count=8,
             )
         except httpx.HTTPError:
             return sample_hotels(request.city, request.accommodation, request.budget)
@@ -87,7 +89,7 @@ class AMapService:
                 continue
             seen_names.add(self._normalize_name(name))
             rating = self._text(self._biz_ext(poi).get("rating"), "")
-            nightly = self._estimate_hotel_cost(request.budget, poi)
+            nightly = self._estimate_hotel_cost(request.budget, request.accommodation, poi)
             hotels.append(
                 Hotel(
                     name=name,
@@ -98,6 +100,7 @@ class AMapService:
                     distance="按行程景点位置动态选择",
                     type=self._poi_category(poi) or request.accommodation,
                     estimated_cost=nightly,
+                    source="amap",
                 )
             )
             if len(hotels) >= 6:
@@ -114,7 +117,7 @@ class AMapService:
                 city=request.city,
                 keywords=self._build_food_keywords(request),
                 types="050000",
-                target_count=max(24, request.days * 6),
+                target_count=max(12, request.days * 3),
             )
         except httpx.HTTPError:
             return sample_meals(request.city, request.budget)
@@ -136,6 +139,7 @@ class AMapService:
                     location=location,
                     description=self._poi_category(poi) or "本地餐饮推荐",
                     estimated_cost=self._estimate_meal_cost(request.budget, poi),
+                    source="amap",
                 )
             )
             if len(meals) >= max(9, request.days * 3):
@@ -144,57 +148,49 @@ class AMapService:
         return meals or sample_meals(request.city, request.budget)
 
     async def query_weather(self, request: TripPlanRequest) -> list[WeatherInfo]:
-        if not self.settings.has_amap:
-            return sample_weather(request.start_date.isoformat(), request.days)
-
-        try:
-            adcode = await self._city_adcode(request.city)
-        except httpx.HTTPError:
-            return self._unavailable_weather_range(request, None)
-        if not adcode:
-            return self._unavailable_weather_range(request, None)
-
+        location = city_center(request.city)
+        if self.settings.has_amap:
+            try:
+                location = await self._city_location(request.city) or location
+            except httpx.HTTPError:
+                pass
         params = {
-            "key": self.settings.amap_web_service_key,
-            "city": adcode,
-            "extensions": "all",
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_direction_10m_dominant",
+            "timezone": "Asia/Shanghai",
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
         }
         try:
-            payload = await self._get_json(f"{self.v3_base_url}/weather/weatherInfo", params)
-        except httpx.HTTPError:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get("https://api.open-meteo.com/v1/forecast", params=params)
+                response.raise_for_status()
+                daily = response.json().get("daily") or {}
+            dates = daily.get("time") or []
+            codes = daily.get("weather_code") or []
+            high = daily.get("temperature_2m_max") or []
+            low = daily.get("temperature_2m_min") or []
+            speed = daily.get("wind_speed_10m_max") or []
+            direction = daily.get("wind_direction_10m_dominant") or []
+            values = (dates, codes, high, low, speed, direction)
+            if not all(len(value) == request.days for value in values):
+                raise ValueError("incomplete forecast")
+        except (httpx.HTTPError, ValueError, TypeError):
             return self._unavailable_weather_range(request, None)
-
-        casts = [
-            cast
-            for cast in (payload.get("forecasts") or [{}])[0].get("casts") or []
-            if cast.get("date")
-        ]
-        if not casts:
-            return self._unavailable_weather_range(request, None)
-
-        cast_by_date = {cast["date"]: cast for cast in casts}
-        latest_forecast_date = max(cast_by_date)
-        result: list[WeatherInfo] = []
-        for index in range(request.days):
-            current_date = (request.start_date + timedelta(days=index)).isoformat()
-            cast = cast_by_date.get(current_date)
-            if cast is None:
-                result.append(self._unavailable_weather(current_date, latest_forecast_date))
-                continue
-            result.append(
-                WeatherInfo(
-                    date=current_date,
-                    day_weather=cast.get("dayweather", "未知"),
-                    night_weather=cast.get("nightweather", "未知"),
-                    day_temp=cast.get("daytemp", 0),
-                    night_temp=cast.get("nighttemp", 0),
-                    wind_direction=cast.get("daywind", "未知"),
-                    wind_power=cast.get("daypower", "未知"),
-                )
+        weather_map = {0: "\u6674", 1: "\u5927\u90e8\u6674\u6717", 2: "\u591a\u4e91", 3: "\u9634", 45: "\u96fe", 48: "\u51bb\u96fe", 51: "\u6bdb\u6bdb\u96e8", 53: "\u5c0f\u96e8", 55: "\u5bc6\u96e8", 61: "\u5c0f\u96e8", 63: "\u4e2d\u96e8", 65: "\u5927\u96e8", 71: "\u5c0f\u96ea", 73: "\u4e2d\u96ea", 75: "\u5927\u96ea", 80: "\u9635\u96e8", 81: "\u5f3a\u9635\u96e8", 82: "\u66b4\u96e8", 95: "\u96f7\u66b4\u96e8"}
+        directions = ("\u5317", "\u4e1c\u5317", "\u4e1c", "\u4e1c\u5357", "\u5357", "\u897f\u5357", "\u897f", "\u897f\u5317")
+        return [
+            WeatherInfo(
+                date=str(dates[index]), day_weather=weather_map.get(self._to_int(codes[index]), "\u5929\u6c14\u5f85\u5b9a"), night_weather=weather_map.get(self._to_int(codes[index]), "\u5929\u6c14\u5f85\u5b9a"),
+                day_temp=round(float(high[index])), night_temp=round(float(low[index])), wind_direction=directions[round((self._to_int(direction[index]) or 0) / 45) % 8], wind_power=f"{round(float(speed[index]))} km/h",
+                notice="\u5929\u6c14\u7531 Open-Meteo \u9884\u62a5\u670d\u52a1\u63d0\u4f9b\u3002", source="open_meteo",
             )
-        return result
+            for index in range(request.days)
+        ]
 
     async def enrich_daily_routes(self, plan: TripPlan, request: TripPlanRequest) -> TripPlan:
+        route_tasks: list[tuple[object, list[asyncio.Task[RouteLeg]]]] = []
         for day in plan.days:
             route_points: list[tuple[str, Location]] = []
             if day.hotel and day.hotel.location:
@@ -204,17 +200,25 @@ class AMapService:
                 day.routes = []
                 continue
 
-            day.routes = []
-            for (origin_name, origin), (destination_name, destination) in zip(route_points, route_points[1:]):
-                day.routes.append(
-                    await self.estimate_route(
+            route_tasks.append(
+                (
+                    day,
+                    [
+                        asyncio.create_task(
+                            self.estimate_route(
                         origin_name=origin_name,
                         origin=origin,
                         destination_name=destination_name,
                         destination=destination,
                         request=request,
                     )
+                        )
+                        for (origin_name, origin), (destination_name, destination) in zip(route_points, route_points[1:])
+                    ],
                 )
+            )
+        for day, tasks in route_tasks:
+            day.routes = list(await asyncio.gather(*tasks))
         return plan
 
     async def estimate_route(
@@ -263,20 +267,29 @@ class AMapService:
         target_count: int,
     ) -> list[dict[str, Any]]:
         pois: list[dict[str, Any]] = []
-        for keyword in keywords:
-            for page in (1, 2):
-                payload = await self._search_pois_v5(city, keyword, types, page)
-                pois.extend(payload)
-                if len(pois) >= target_count:
-                    return pois
-        if pois:
-            return pois
-        for keyword in keywords:
-            for page in (1, 2):
-                payload = await self._search_pois_v3(city, keyword, types, page)
-                pois.extend(payload)
-                if len(pois) >= target_count:
-                    return pois
+        seen: set[str] = set()
+        try:
+            async with asyncio.timeout(8):
+                for keyword in keywords:
+                    results: list[dict[str, Any]] = []
+                    for search in (self._search_pois_v5, self._search_pois_v3):
+                        try:
+                            results = await search(city, keyword, types, page=1)
+                        except httpx.HTTPError:
+                            continue
+                        if results:
+                            break
+                    for poi in results:
+                        name = self._text(poi.get("name"), "")
+                        identity = f"{self._normalize_name(name)}|{self._text(poi.get('location'), '')}"
+                        if not name or identity in seen:
+                            continue
+                        seen.add(identity)
+                        pois.append(poi)
+                        if len(pois) >= target_count:
+                            return pois
+        except TimeoutError:
+            pass
         return pois
 
     async def _search_pois_v5(self, city: str, keyword: str, types: str, page: int) -> list[dict[str, Any]]:
@@ -338,7 +351,7 @@ class AMapService:
         return districts[0] if districts else None
 
     async def _get_json(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=12) as client:
+        async with httpx.AsyncClient(timeout=5) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
             payload = response.json()
@@ -376,6 +389,7 @@ class AMapService:
             wind_power="未知",
             forecast_available=False,
             notice=notice,
+            source="unavailable",
         )
 
     @staticmethod
@@ -393,8 +407,12 @@ class AMapService:
             for part in request.preferences.replace("，", ",").replace("、", ",").split(",")
             if part.strip()
         ]
-        preference_keywords = [f"{request.city} {part}" for part in preference_parts[:4]]
-        keywords = [f"{request.city} 景点 {request.preferences}", *preference_keywords, *base_keywords]
+        preference_keywords = [
+            f"{request.city} {part}"
+            for part in preference_parts
+            if not AMapService._is_meal_preference(part)
+        ]
+        keywords = [*preference_keywords, *base_keywords]
         return list(dict.fromkeys(keywords))
 
     @staticmethod
@@ -426,7 +444,11 @@ class AMapService:
 
     @staticmethod
     def _target_attraction_count(days: int) -> int:
-        return max(12, min(36, days * 5))
+        return max(8, min(16, days * 3))
+
+    @staticmethod
+    def _is_meal_preference(preference: str) -> bool:
+        return any(keyword in preference for keyword in ("美食", "餐饮", "小吃", "探店"))
 
     @staticmethod
     def _normalize_name(name: str) -> str:
@@ -435,10 +457,20 @@ class AMapService:
     @staticmethod
     def _is_attraction_poi(poi: dict[str, Any]) -> bool:
         category = AMapService._poi_category(poi)
-        forbidden_categories = ("餐饮服务", "住宿服务", "购物服务", "生活服务", "商务住宅", "公司企业")
+        forbidden_categories = (
+            "餐饮服务",
+            "住宿服务",
+            "购物服务",
+            "生活服务",
+            "商务住宅",
+            "公司企业",
+            "学校",
+            "培训",
+        )
         if any(item in category for item in forbidden_categories):
             return False
-        return any(item in category for item in ("风景名胜", "公园广场", "科教文化", "博物馆"))
+        attraction_categories = ("风景名胜", "公园广场", "博物馆", "美术馆", "展览馆", "纪念馆", "图书馆")
+        return any(item in category for item in attraction_categories)
 
     @staticmethod
     def _looks_like_non_attraction_name(name: str) -> bool:
@@ -519,12 +551,12 @@ class AMapService:
         return 90
 
     @staticmethod
-    def _estimate_hotel_cost(budget: str, poi: dict[str, Any]) -> int:
-        cost_map = {"经济": 260, "中等": 460, "舒适": 720, "豪华": 1200}
-        biz_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
-        if biz_cost:
-            return biz_cost
-        return cost_map.get(budget, 460)
+    def _estimate_hotel_cost(budget: str, accommodation: str, poi: dict[str, Any]) -> int:
+        business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
+        if business_cost:
+            return business_cost
+        costs = {"\u9752\u5e74\u65c5\u820d": 120, "\u7ecf\u6d4e\u578b\u9152\u5e97": 280, "\u8212\u9002\u578b\u9152\u5e97": 520, "\u9ad8\u7aef\u9152\u5e97": 980}
+        return costs.get(accommodation, {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460))
 
     @staticmethod
     def _estimate_meal_cost(budget: str, poi: dict[str, Any]) -> int:
