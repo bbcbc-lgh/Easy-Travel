@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.Config import Settings
-from app.models.Schemas import TripPlan, TripPlanRequest
+from src.Config import Settings
+from src.Model.Schemas import TripPlan, TripPlanRequest
 
 
 class TripPlanRepository:

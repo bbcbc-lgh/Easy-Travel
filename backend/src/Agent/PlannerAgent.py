@@ -1,8 +1,8 @@
 from datetime import timedelta
 
-from app.models.Schemas import Attraction, Budget, DayPlan, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
-from app.services.LLM import LLMService
-from app.services.SampleData import sample_meals
+from src.Model.Schemas import Attraction, Budget, DayPlan, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
+from src.Service.LLM import LLMService
+from src.Service.SampleData import sample_meals
 
 
 class PlannerAgent:

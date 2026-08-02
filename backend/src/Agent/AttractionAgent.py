@@ -1,5 +1,5 @@
-from app.models.Schemas import Attraction, TripPlanRequest
-from app.services.AMap import AMapService
+from src.Model.Schemas import Attraction, TripPlanRequest
+from src.Service.AMap import AMapService
 
 
 class AttractionSearchAgent:

@@ -1,5 +1,5 @@
-from app.agents.PlannerAgent import PlannerAgent
-from app.models.Schemas import PlanQuality, TripPlan, TripPlanRequest
+from src.Agent.PlannerAgent import PlannerAgent
+from src.Model.Schemas import PlanQuality, TripPlan, TripPlanRequest
 
 
 class ReviewAgent:

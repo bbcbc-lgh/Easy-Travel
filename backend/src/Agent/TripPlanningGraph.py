@@ -3,14 +3,14 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.AttractionAgent import AttractionSearchAgent
-from app.agents.HotelAgent import HotelAgent
-from app.agents.MealAgent import MealAgent
-from app.agents.PlannerAgent import PlannerAgent
-from app.agents.ReviewAgent import ReviewAgent
-from app.agents.WeatherAgent import WeatherQueryAgent
-from app.models.Schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
-from app.services.AMap import AMapService
+from src.Agent.AttractionAgent import AttractionSearchAgent
+from src.Agent.HotelAgent import HotelAgent
+from src.Agent.MealAgent import MealAgent
+from src.Agent.PlannerAgent import PlannerAgent
+from src.Agent.ReviewAgent import ReviewAgent
+from src.Agent.WeatherAgent import WeatherQueryAgent
+from src.Model.Schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
+from src.Service.AMap import AMapService
 
 
 class TripPlanningState(TypedDict, total=False):

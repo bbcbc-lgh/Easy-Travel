@@ -54,15 +54,14 @@ Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户�
 ```text
 .
 ├── backend/
-│   ├── app/
-│   │   ├── agents/       # 景点、天气、酒店、餐饮、规划、质量检查 Agent 和 LangGraph 编排
-│   │   ├── api/          # FastAPI 路由、依赖和应用入口
-│   │   ├── models/       # Pydantic 请求/响应模型
-│   │   ├── services/     # LLM、高德服务、SQLite 仓储和样例数据
+│   ├── src/
+│   │   ├── Agent/        # 景点、天气、酒店、餐饮、规划、质量检查 Agent 和 LangGraph 编排
+│   │   ├── API/          # FastAPI 路由、依赖和应用入口
+│   │   ├── Model/        # Pydantic 请求/响应模型
+│   │   ├── Service/      # LLM、高德服务、SQLite 仓储和样例数据
 │   │   └── Config.py     # 后端配置
 │   ├── tests/            # 后端测试
-│   ├── requirements.txt
-│   └── run.py
+│   └── requirements.txt
 └── frontend/
     ├── src/
     │   ├── router/       # 前端路由
@@ -81,7 +80,7 @@ Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户�
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python run.py
+.\.venv\Scripts\python -m uvicorn src.API.Main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 后端默认运行在：

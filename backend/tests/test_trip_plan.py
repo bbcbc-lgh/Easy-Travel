@@ -2,13 +2,13 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 import pytest
 
-from app.agents.ReviewAgent import ReviewAgent
-from app.api.Deps import get_pipeline
-from app.api.Main import app
-from app.Config import Settings
-from app.models.Schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
-from app.services.AMap import AMapService
-from app.services.LLM import LLMService
+from src.Agent.ReviewAgent import ReviewAgent
+from src.API.Deps import get_pipeline
+from src.API.Main import app
+from src.Config import Settings
+from src.Model.Schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
+from src.Service.AMap import AMapService
+from src.Service.LLM import LLMService
 
 
 client = TestClient(app)
@@ -17,7 +17,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def use_sample_data_for_api_tests() -> None:
     get_pipeline.cache_clear()
-    with patch("app.api.Deps.settings.use_sample_data", True):
+    with patch("src.API.Deps.settings.use_sample_data", True):
         yield
     get_pipeline.cache_clear()
 
@@ -29,7 +29,7 @@ def test_llm_service_disables_retries_for_fast_fallback() -> None:
         use_sample_data=False,
     )
 
-    with patch("app.services.LLM.AsyncOpenAI") as mock_client:
+    with patch("src.Service.LLM.AsyncOpenAI") as mock_client:
         LLMService(settings)
 
     mock_client.assert_called_once_with(

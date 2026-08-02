@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.Deps import TripPlanningPipeline, get_pipeline, get_trip_plan_repository
-from app.Config import settings
-from app.models.Schemas import HealthResponse, TripPlan, TripPlanRequest, TripPlanSummary
-from app.services.Database import TripPlanRepository
+from src.API.Deps import TripPlanningPipeline, get_pipeline, get_trip_plan_repository
+from src.Config import settings
+from src.Model.Schemas import HealthResponse, TripPlan, TripPlanRequest, TripPlanSummary
+from src.Service.Database import TripPlanRepository
 
 router = APIRouter()
 
