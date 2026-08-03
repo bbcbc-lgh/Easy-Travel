@@ -5,7 +5,7 @@
         <div class="brand-mark">
           <Plane :size="44" />
         </div>
-        <p class="eyebrow">Easy Travel</p>
+        <p class="eyebrow">EasyTravel</p>
         <h1>从一份清楚的旅行需求开始</h1>
       </header>
 

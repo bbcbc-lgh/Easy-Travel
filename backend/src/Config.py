@@ -8,7 +8,7 @@ ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class Settings(BaseSettings):
-    app_name: str = "Easy Travel"
+    app_name: str = "EasyTravel"
     app_env: str = "development"
     api_host: str = Field("127.0.0.1", validation_alias="FASTAPI_API_HOST")
     api_port: int = Field(8000, validation_alias="FASTAPI_API_PORT")

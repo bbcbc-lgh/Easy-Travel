@@ -1,6 +1,6 @@
-# Easy Travel 智能旅行规划系统
+# EasyTravel 智能旅行规划系统
 
-Easy Travel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
+EasyTravel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
 
 项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过 LangGraph 编排多 Agent 流程，完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
 
@@ -114,7 +114,7 @@ http://localhost:5173
 后端可在 `backend/.env` 中配置：
 
 ```env
-APP_NAME=Easy Travel
+APP_NAME=EasyTravel
 FASTAPI_API_HOST=127.0.0.1
 FASTAPI_API_PORT=8000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
