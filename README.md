@@ -1,5 +1,7 @@
 # EasyTravel 智能旅行规划系统
 
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
 EasyTravel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
 
 项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过 LangGraph 编排多 Agent 流程，完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
@@ -187,3 +189,7 @@ npm run build
 - 后端使用 Python 内置 `sqlite3` 模块，无需单独安装数据库服务。
 - 外部 API 不可用时，系统会降级到本地样例数据，便于离线开发和演示。
 - 生产构建中 Ant Design Vue、地图和导出相关库会带来较大的前端包体积，这是当前实现的正常现象。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
