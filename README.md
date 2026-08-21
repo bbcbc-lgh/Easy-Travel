@@ -1,80 +1,35 @@
-# EasyTravel 智能旅行规划系统
+# EasyTravel
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
+![Vue](https://img.shields.io/badge/Vue-3-42B883.svg)
 
-EasyTravel 是一个面向旅行规划场景的 AI Agent 全栈应用。用户输入目的地、出行日期、旅行偏好、预算档位、交通方式和住宿偏好后，系统会自动生成包含景点、餐饮、酒店、天气、路线估算和预算明细的可编辑行程。
+EasyTravel 是一个可以直接在本地运行的 AI 旅行规划 Web 应用。输入目的地、日期、偏好和预算后，它会生成可编辑的多日行程，并展示景点、餐饮、住宿、天气、路线和预算信息。
 
-项目采用 FastAPI + Vue 3 + TypeScript 构建，后端通过 LangGraph 编排多 Agent 流程，完成候选数据检索、天气查询、酒店与餐饮推荐、行程编排和质量检查；前端提供表单录入、结果展示、地图标记、行程编辑、分享链接和图片/PDF 导出能力。
+项目适合用来体验 FastAPI、Vue 3、LangGraph 和 OpenAI 兼容接口的组合，也可以在没有 API Key 的情况下使用内置样例数据进行开发和演示。
 
-## 功能特性
+## 你可以用它做什么
 
-- 根据城市、日期、偏好、预算、交通方式和住宿类型生成旅行计划。
-- 集成高德 Web Service API，支持景点、餐饮、酒店、天气、城市坐标和路线估算。
-- 支持 OpenAI 兼容接口生成结构化 JSON 行程，失败时自动切换到规则 fallback。
-- 支持无 API Key 本地运行，使用确定性样例数据完成演示和开发调试。
-- 使用 SQLite 持久化生成结果，支持历史列表、详情读取、编辑保存和本地分享链接。
-- 内置质量检查，覆盖重复景点、空行程、每日强度、天气覆盖和候选数量等问题。
-- 前端支持高德地图景点标记、每日路线距离/耗时展示、行程移动/删除和图片/PDF 导出。
+- 根据城市、日期、旅行偏好、预算、交通和住宿要求生成行程。
+- 接入高德 Web Service API 获取景点、餐饮、酒店、天气和路线信息。
+- 通过 OpenAI 兼容接口生成结构化计划；没有密钥或外部服务不可用时自动使用 fallback 数据。
+- 在浏览器中编辑每日行程、查看地图标记、保存历史计划，并导出图片或 PDF。
+- 通过 FastAPI 文档直接调试 API，或将前端替换为自己的客户端。
 
-## 技术栈
+## 快速开始
 
-后端：
+### 环境要求
 
-- Python
-- FastAPI
-- Pydantic
-- httpx
-- SQLite
-- LangGraph
-- OpenAI 兼容 LLM API
-- 高德 Web Service API
+- Python 3.10+
+- Node.js 20.19+（或 22.12+）
+- npm
 
-前端：
+### 获取代码
 
-- Vue 3
-- TypeScript
-- Vite
-- Ant Design Vue
-- 高德 JavaScript API
-- html2canvas
-- jsPDF
-
-## 系统流程
-
-```text
-用户输入旅行需求
-  -> LangGraph collect_candidates 节点并行调用景点 / 酒店 / 餐饮 / 天气 Agent
-  -> LangGraph create_plan 节点调用规划 Agent 生成每日行程
-  -> LangGraph enrich_routes 节点补充日内交通信息
-  -> LangGraph review_plan 节点生成评分和提醒
-  -> SQLite 保存结果
-  -> 前端展示、编辑、分享和导出
+```powershell
+git clone https://github.com/bbcbc-lgh/Easy-Travel.git
+cd Easy-Travel
 ```
-
-## 项目结构
-
-```text
-.
-├── backend/
-│   ├── src/
-│   │   ├── Agent/        # 景点、天气、酒店、餐饮、规划、质量检查 Agent 和 LangGraph 编排
-│   │   ├── API/          # FastAPI 路由、依赖和应用入口
-│   │   ├── Model/        # Pydantic 请求/响应模型
-│   │   ├── Service/      # LLM、高德服务、SQLite 仓储和样例数据
-│   │   └── Config.py     # 后端配置
-│   ├── tests/            # 后端测试
-│   └── requirements.txt
-└── frontend/
-    ├── src/
-    │   ├── router/       # 前端路由
-    │   ├── services/     # API client
-    │   ├── styles/       # 全局样式
-    │   ├── types/        # TypeScript 类型
-    │   └── views/        # 页面视图
-    └── package.json
-```
-
-## 本地运行
 
 ### 1. 启动后端
 
@@ -85,17 +40,9 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn src.API.Main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-后端默认运行在：
+后端地址：<http://127.0.0.1:8000>
 
-```text
-http://localhost:8000
-```
-
-接口文档：
-
-```text
-http://localhost:8000/docs
-```
+API 文档：<http://127.0.0.1:8000/docs>
 
 ### 2. 启动前端
 
@@ -105,18 +52,19 @@ npm install
 npm run dev
 ```
 
-前端默认运行在：
+前端地址：<http://127.0.0.1:5173>
 
-```text
-http://localhost:5173
-```
+启动两个服务后，打开前端地址即可生成第一份旅行计划。首次运行不配置任何密钥也可以完成完整流程。
 
-## 环境变量
+## 配置
 
-后端可在 `backend/.env` 中配置：
+### 后端
+
+在 `backend/.env` 中填写需要的配置。可以从 `backend/.env.example` 开始：
 
 ```env
 APP_NAME=EasyTravel
+APP_ENV=development
 FASTAPI_API_HOST=127.0.0.1
 FASTAPI_API_PORT=8000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -130,31 +78,36 @@ USE_SAMPLE_DATA=false
 DATABASE_PATH=data/easy_travel.sqlite3
 ```
 
-前端可在 `frontend/.env` 中配置：
+- `LLM_API_KEY`：OpenAI 或其他 OpenAI 兼容服务的密钥。留空时使用规则 fallback。
+- `LLM_BASE_URL`：兼容服务的 API 地址；使用 OpenAI 时可留空。
+- `FASTAPI_AMAP_WEB_KEY`：高德 Web Service Key。留空或请求失败时使用样例地点和本地距离估算。
+- `USE_SAMPLE_DATA=true`：强制离线模式，跳过 LLM 和高德请求，适合 CI、调试和演示。
+- `DATABASE_PATH`：SQLite 文件路径，默认保存在 `backend/data/` 下。
+
+### 前端
+
+在 `frontend/.env` 中填写：
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
 VITE_AMAP_JS_KEY=
 ```
 
-说明：
+`VITE_AMAP_JS_KEY` 只影响地图加载；不配置时仍可生成和编辑行程。
 
-- `LLM_API_KEY` 为空时，后端会跳过大模型生成并使用规则 fallback。
-- `FASTAPI_AMAP_WEB_KEY` 为空或请求失败时，后端会使用样例数据和本地距离估算。
-- `USE_SAMPLE_DATA=true` 时，后端会强制跳过 LLM 和高德外部调用，适合本地自检、CI 和离线演示。
-- `VITE_AMAP_JS_KEY` 为空时，前端不会加载高德地图，但仍可展示行程内容。
+## API 示例
 
-## API 概览
+所有接口都以 `/api` 为前缀：
 
-```text
-GET  /api/health
-POST /api/trip/plan
-GET  /api/trip/plans
-GET  /api/trip/plans/{plan_id}
-PUT  /api/trip/plans/{plan_id}
-```
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 查看服务状态 |
+| `POST` | `/api/trip/plan` | 生成并保存旅行计划 |
+| `GET` | `/api/trip/plans` | 获取历史计划列表 |
+| `GET` | `/api/trip/plans/{plan_id}` | 获取计划详情 |
+| `PUT` | `/api/trip/plans/{plan_id}` | 保存编辑后的计划 |
 
-示例请求：
+生成计划的请求示例：
 
 ```json
 {
@@ -168,27 +121,46 @@ PUT  /api/trip/plans/{plan_id}
 }
 ```
 
-## 测试与构建
+`budget` 支持 `经济`、`中等`、`舒适`、`豪华`；`days` 支持 1 到 14 天。更完整的请求和响应模型可在 `/docs` 中查看。
 
-后端测试：
+## 开发命令
 
 ```powershell
+# 后端测试
 cd backend
 .\.venv\Scripts\python -m pytest
-```
 
-前端构建：
-
-```powershell
-cd frontend
+# 前端生产构建
+cd ..\frontend
 npm run build
 ```
 
-## 开发说明
+后端使用 Python 内置 SQLite，不需要额外启动数据库服务。外部服务不可用时，fallback 逻辑仍可用于本地开发。
 
-- 后端使用 Python 内置 `sqlite3` 模块，无需单独安装数据库服务。
-- 外部 API 不可用时，系统会降级到本地样例数据，便于离线开发和演示。
-- 生产构建中 Ant Design Vue、地图和导出相关库会带来较大的前端包体积，这是当前实现的正常现象。
+## 项目结构
+
+```text
+.
+├── backend/
+│   ├── src/Agent/      # Agent 和 LangGraph 编排
+│   ├── src/API/        # FastAPI 应用与路由
+│   ├── src/Model/      # Pydantic 数据模型
+│   ├── src/Service/    # LLM、高德、SQLite 和样例数据服务
+│   └── tests/          # 后端测试
+└── frontend/
+    └── src/             # Vue 页面、路由、API client 和类型
+```
+
+## 参与贡献
+
+欢迎通过 Issue 报告问题或提出功能建议，也欢迎提交 Pull Request。
+
+提交前请至少运行：
+
+1. `backend/.venv/Scripts/python -m pytest`
+2. `frontend/npm run build`
+
+提交 Issue 时，尽量附上运行环境、复现步骤、相关日志，以及是否开启了 `USE_SAMPLE_DATA`。
 
 ## 许可证
 
