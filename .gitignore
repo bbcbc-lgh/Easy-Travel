@@ -15,6 +15,9 @@ frontend/tsconfig.tsbuildinfo
 frontend/src/**/*.js
 frontend/src/**/*.js.map
 
+# Local working notes (not for version control)
+outputs/
+
 # Editor and OS
 .idea/
 .vscode/

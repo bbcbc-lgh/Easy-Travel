@@ -1,0 +1,16 @@
+# Local artefacts that must never enter an image
+.git
+.gitignore
+outputs
+.logs
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/.pytest_cache
+backend/data
+backend/.env
+backend/tests
+frontend/node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo
+frontend/.env
