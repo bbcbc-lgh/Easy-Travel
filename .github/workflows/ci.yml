@@ -146,8 +146,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
+      # No --with-deps: that runs apt against the Ubuntu mirrors, which is the one
+      # thing here that can fail for reasons unrelated to this repository (a DNS
+      # blip turned into a red build). The runner image already carries the
+      # libraries Chromium needs.
       - name: Install browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run e2e
         run: npm run test:e2e
