@@ -1,5 +1,5 @@
-from src.Model.Schemas import TripPlanRequest, WeatherInfo
-from src.Service.AMap import AMapService
+from src.model.schemas import TripPlanRequest, WeatherInfo
+from src.service.amap import AMapService
 
 
 class WeatherQueryAgent:

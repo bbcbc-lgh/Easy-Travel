@@ -1,9 +1,16 @@
-from src.Agent.PlannerAgent import PlannerAgent
-from src.Model.Schemas import PlanQuality, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, Hotel, Meal, PlanQuality, TripPlan, TripPlanRequest
+from src.planning.budget import calculate_budget
 
 
 class ReviewAgent:
-    def run(self, request: TripPlanRequest, plan: TripPlan, candidate_count: int) -> TripPlan:
+    """Scores a plan from facts the pipeline can actually verify.
+
+    The score answers one question: *how much of this itinerary can the user
+    trust?* A rule-engine fallback, unknown prices or placeholder places must
+    lower it — a template plan never deserves 100.
+    """
+
+    def run(self, request: TripPlanRequest, plan: TripPlan, candidate_count: int | None = None) -> TripPlan:
         warnings: list[str] = []
         checks: dict[str, bool] = {}
 
@@ -32,9 +39,14 @@ class ReviewAgent:
             notice = next((item.notice for item in unavailable_weather if item.notice), None)
             warnings.append(notice or "天气数据不足，部分日期无法保证查询天气。")
 
-        checks["enough_candidates"] = candidate_count >= min(request.days * 2, 8)
-        if not checks["enough_candidates"]:
-            warnings.append("候选景点数量偏少，规划结果更适合作为初稿。")
+        if candidate_count is None:
+            # Editing an existing plan: the candidate pool is no longer known,
+            # so this check cannot judge anything — leave it neutral.
+            checks["enough_candidates"] = True
+        else:
+            checks["enough_candidates"] = candidate_count >= min(request.days * 2, 8)
+            if not checks["enough_candidates"]:
+                warnings.append("候选景点数量偏少，规划结果更适合作为初稿。")
 
         sparse_days = [day.day_index + 1 for day in plan.days if len(day.attractions) < 2]
         checks["daily_content_sufficient"] = not sparse_days
@@ -52,10 +64,21 @@ class ReviewAgent:
         if sample_places:
             warnings.append("\u666f\u70b9\u3001\u9910\u996e\u6216\u4f4f\u5bbf\u672a\u83b7\u5f97\u5b9e\u65f6\u5730\u70b9\u6570\u636e\uff0c\u9875\u9762\u5df2\u6309\u6f14\u793a\u6570\u636e\u6807\u8bb0\uff0c\u8bf7\u52ff\u76f4\u63a5\u7528\u4e8e\u9884\u8ba2\u6216\u5bfc\u822a\u3002")
 
-        if plan.budget is None:
-            plan.budget = PlannerAgent._calculate_budget(plan.days, request)
-        else:
-            plan.budget = PlannerAgent._calculate_budget(plan.days, request)
+        checks["planned_by_model"] = not plan.degraded
+        if plan.degraded:
+            warnings.append(
+                f"本次行程由规则引擎生成（原因：{plan.degraded_reason or 'model_unavailable'}），"
+                "未经 AI 规划，仅供参考。"
+            )
+
+        estimated_count, unknown_count = self._price_provenance(plan)
+        checks["prices_are_confirmed"] = unknown_count == 0
+        if unknown_count:
+            warnings.append(f"{unknown_count} 项价格暂无法确认，页面已隐藏具体金额，以现场为准。")
+        if estimated_count:
+            warnings.append(f"{estimated_count} 项价格为规则估算，实际以现场为准。")
+
+        plan.budget = calculate_budget(plan.days, request)
 
         score = 100
         score -= removed_duplicates * 8
@@ -63,16 +86,33 @@ class ReviewAgent:
         score -= len(overloaded_days) * 8
         if not checks["weather_complete"]:
             score -= 8
-        if not checks["enough_candidates"]:
+        if candidate_count is not None and not checks["enough_candidates"]:
             score -= 10
-
         score -= len(sparse_days) * 8
         score -= len(unnamed_meal_days) * 8
         if sample_places:
             score -= 18
+        score -= min(unknown_count * 4, 16)
+        if estimated_count:
+            score = min(score, 95)
+        if plan.degraded:
+            score -= 35
+        score = max(score, 0)
+        if plan.degraded:
+            score = min(score, 60)
 
-        plan.quality = PlanQuality(score=max(score, 0), warnings=warnings, checks=checks)
+        plan.quality = PlanQuality(score=score, warnings=warnings, checks=checks)
         return plan
+
+    @staticmethod
+    def _price_provenance(plan: TripPlan) -> tuple[int, int]:
+        attractions: list[Attraction] = [item for day in plan.days for item in day.attractions]
+        meals: list[Meal] = [item for day in plan.days for item in day.meals]
+        hotels: list[Hotel] = [day.hotel for day in plan.days if day.hotel]
+        items = [*attractions, *meals, *hotels]
+        estimated = sum(1 for item in items if item.price_source == "estimated")
+        unknown = sum(1 for item in items if item.price_source == "unknown")
+        return estimated, unknown
 
     @staticmethod
     def _remove_duplicate_attractions(plan: TripPlan) -> int:
