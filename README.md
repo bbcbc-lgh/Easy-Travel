@@ -150,18 +150,20 @@ npm run dev
 
 ---
 
-## 可选：单容器运行
+## 一个端口跑（可选）
 
-除了脚本启动，也可以自己构建一个镜像，把前端静态文件和 API 放在同一个容器里（以非 root 用户运行）：
+不想开两个终端、也不要 Vite 开发服务器时，把前端构建一次，然后只跑后端——FastAPI 会自己把 `frontend/dist` 一起服务：
 
 ```bash
-docker build -t easy-travel .
-docker run --rm -p 127.0.0.1:8000:8000 \
-  -e LLM_API_KEY=你的密钥 -e LLM_MODEL=deepseek-chat -e AMAP_WEB_KEY=你的高德Key \
-  -v easy-travel-data:/app/data easy-travel
+cd frontend && npm run build        # 只在第一次或前端改动后需要
+cd ../backend
+. .venv/bin/activate                # Windows: .venv\Scripts\Activate.ps1
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>。注意端口映射写的是 `127.0.0.1:8000:8000` 而不是 `8000:8000`——后者会把一个无鉴权服务暴露给整个局域网。
+打开 <http://127.0.0.1:8000> 即可，前端和后端在同一个端口，不需要代理。后端启动时会检查 `frontend/dist/index.html` 是否存在，存在才挂载；不存在就只提供 API。
+
+日常改代码请用上面的 `scripts/dev.ps1`（有热更新），这个方式适合"跑起来用"而不是"改代码"。
 
 ---
 
