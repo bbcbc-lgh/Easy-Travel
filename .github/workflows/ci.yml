@@ -89,10 +89,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      # Fails on high/critical. Moderate advisories with no upstream fix yet are
-      # reported by npm but do not block the build.
-      - name: Dependency audit
-        run: npm audit --audit-level=high
+      # Two gates on purpose: what ships must be clean of *any* advisory, and the
+      # build-time toolchain must stay free of moderate ones too. minimatch (one
+      # advisory, inherited by eslint and typescript-eslint) is held at >=11 by an
+      # override in package.json; npm's own suggestion is a downgrade, not a fix.
+      - name: Dependency audit (shipped code)
+        run: npm audit --omit=dev
+
+      - name: Dependency audit (toolchain)
+        run: npm audit --audit-level=moderate
 
       - name: Lint
         run: npm run lint

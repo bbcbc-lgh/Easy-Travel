@@ -249,7 +249,7 @@ CI 里用的是官方 CDN，所以 `--with-deps` 那套只在 CI 需要。
 | 格式 | `ruff format --check` | `prettier --check` + `stylelint` |
 | 类型 | `pyright`（standard，src + evals） | `vue-tsc`（strict + `noUncheckedIndexedAccess`） |
 | 测试 | `pytest` 185 个，覆盖率 81% | Vitest 9 个（覆盖率 12.9%）+ Playwright 3 条关键路径 |
-| 依赖 | `pip-audit` + `pip check` | `npm audit --audit-level=high` |
+| 依赖 | `pip-audit` + `pip check` | `npm audit`（**0 漏洞**，含 dev 依赖） |
 | 自动升级 | Dependabot（pip / npm / actions） | 同左 |
 
 覆盖率**只测量不设门槛**：数字用来定位该补哪里，不当作"代码对不对"的证明。
