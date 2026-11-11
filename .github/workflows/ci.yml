@@ -30,6 +30,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      # Pinned versions rot: fastapi 0.116.1 once pinned starlette < 0.48, where
+      # no patched release existed. This step is what makes that visible.
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
       - name: Lint
         run: ruff check src tests evals
 
