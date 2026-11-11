@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Iterable
 from datetime import timedelta
 from math import asin, cos, radians, sin, sqrt
@@ -6,9 +7,19 @@ from typing import Any
 
 import httpx
 
-from src.Config import Settings
-from src.Model.Schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
-from src.Service.SampleData import city_center, sample_attractions, sample_hotels, sample_meals, sample_weather
+from src.config import Settings
+from src.model.schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
+from src.service.logging import log_event
+from src.service.cache import TTLCache
+from src.service.qweather import QWeatherService
+from src.service.sample_data import city_center, sample_attractions, sample_hotels, sample_meals, sample_weather
+
+logger = logging.getLogger(__name__)
+
+# Candidate depth: page 1 alone caps the pool at ~20 POIs per keyword. A second
+# page roughly doubles the pool without touching the 8 s search budget.
+MAX_POI_PAGES = 2
+POI_PAGE_SIZE = 20
 
 
 class AMapService:
@@ -16,8 +27,32 @@ class AMapService:
         self.settings = settings
         self.v3_base_url = "https://restapi.amap.com/v3"
         self.v5_base_url = "https://restapi.amap.com/v5"
+        self.qweather = QWeatherService(settings)
+        # Sample mode is for tests and offline demos: caching it would only make
+        # stale demo data survive longer than it should.
+        self._cache = (
+            TTLCache(settings.cache_ttl_seconds)
+            if settings.cache_enabled and not settings.use_sample_data
+            else None
+        )
+
+    def _cache_get(self, key: tuple) -> object | None:
+        return self._cache.get(key) if self._cache is not None else None
+
+    def _cache_set(self, key: tuple, value: object) -> None:
+        if self._cache is not None:
+            self._cache.set(key, value)
 
     async def search_attractions(self, request: TripPlanRequest) -> list[Attraction]:
+        cache_key = ("attractions", request.city, request.preferences, request.days)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+        result = await self._search_attractions_uncached(request)
+        self._cache_set(cache_key, result)
+        return result
+
+    async def _search_attractions_uncached(self, request: TripPlanRequest) -> list[Attraction]:
         if not self.settings.has_amap:
             return sample_attractions(request.city, request.preferences)
 
@@ -29,7 +64,16 @@ class AMapService:
                 types="110000|110100|110200|140000|140100",
                 target_count=target_count * 2,
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.attraction_search_failed",
+                level=logging.WARNING,
+                reason=type(exc).__name__,
+                city=request.city,
+                target_count=target_count,
+                error=str(exc),
+            )
             return await self._fallback_attractions(request)
 
         attractions: list[Attraction] = []
@@ -48,6 +92,7 @@ class AMapService:
                 continue
             seen_names.add(normalized_name)
             category = self._poi_category(poi) or "景点"
+            ticket_price, price_source = self._ticket_price(category)
             attractions.append(
                 Attraction(
                     name=name,
@@ -57,7 +102,12 @@ class AMapService:
                     description=self._poi_description(name, request.city, request.preferences, category),
                     category=category,
                     rating=self._poi_rating(poi),
-                    ticket_price=self._estimate_ticket_price(category),
+                    image_url=self._poi_photo(poi),
+                    ticket_price=ticket_price,
+                    price_source=price_source,
+                    opening_hours=self._opening_hours(poi),
+                    contact_phone=self._poi_phone(poi),
+                    level=self._poi_level(poi),
                     source="amap",
                 )
             )
@@ -67,6 +117,15 @@ class AMapService:
         return attractions or await self._fallback_attractions(request)
 
     async def search_hotels(self, request: TripPlanRequest) -> list[Hotel]:
+        cache_key = ("hotels", request.city, request.accommodation, request.budget)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+        result = await self._search_hotels_uncached(request)
+        self._cache_set(cache_key, result)
+        return result
+
+    async def _search_hotels_uncached(self, request: TripPlanRequest) -> list[Hotel]:
         if not self.settings.has_amap:
             return sample_hotels(request.city, request.accommodation, request.budget)
 
@@ -77,7 +136,15 @@ class AMapService:
                 types="100000|100100|100101|100102|100105",
                 target_count=8,
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.hotel_search_failed",
+                level=logging.WARNING,
+                reason=type(exc).__name__,
+                city=request.city,
+                error=str(exc),
+            )
             return sample_hotels(request.city, request.accommodation, request.budget)
 
         hotels: list[Hotel] = []
@@ -89,7 +156,7 @@ class AMapService:
                 continue
             seen_names.add(self._normalize_name(name))
             rating = self._text(self._biz_ext(poi).get("rating"), "")
-            nightly = self._estimate_hotel_cost(request.budget, request.accommodation, poi)
+            nightly, price_source = self._hotel_cost(request.budget, request.accommodation, poi)
             hotels.append(
                 Hotel(
                     name=name,
@@ -100,6 +167,7 @@ class AMapService:
                     distance="按行程景点位置动态选择",
                     type=self._poi_category(poi) or request.accommodation,
                     estimated_cost=nightly,
+                    price_source=price_source,
                     source="amap",
                 )
             )
@@ -109,6 +177,15 @@ class AMapService:
         return hotels or sample_hotels(request.city, request.accommodation, request.budget)
 
     async def search_meals(self, request: TripPlanRequest) -> list[Meal]:
+        cache_key = ("meals", request.city, request.budget, request.days)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+        result = await self._search_meals_uncached(request)
+        self._cache_set(cache_key, result)
+        return result
+
+    async def _search_meals_uncached(self, request: TripPlanRequest) -> list[Meal]:
         if not self.settings.has_amap:
             return sample_meals(request.city, request.budget)
 
@@ -119,7 +196,15 @@ class AMapService:
                 types="050000",
                 target_count=max(12, request.days * 3),
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.meal_search_failed",
+                level=logging.WARNING,
+                reason=type(exc).__name__,
+                city=request.city,
+                error=str(exc),
+            )
             return sample_meals(request.city, request.budget)
 
         meal_types = ("breakfast", "lunch", "dinner")
@@ -131,6 +216,7 @@ class AMapService:
             if not name or location is None or self._normalize_name(name) in seen_names:
                 continue
             seen_names.add(self._normalize_name(name))
+            cost, price_source = self._meal_cost(request.budget, poi)
             meals.append(
                 Meal(
                     type=meal_types[index % len(meal_types)],
@@ -138,7 +224,9 @@ class AMapService:
                     address=self._poi_address(poi, request.city),
                     location=location,
                     description=self._poi_category(poi) or "本地餐饮推荐",
-                    estimated_cost=self._estimate_meal_cost(request.budget, poi),
+                    estimated_cost=cost,
+                    price_source=price_source,
+                    opening_hours=self._opening_hours(poi),
                     source="amap",
                 )
             )
@@ -148,12 +236,36 @@ class AMapService:
         return meals or sample_meals(request.city, request.budget)
 
     async def query_weather(self, request: TripPlanRequest) -> list[WeatherInfo]:
+        cache_key = ("weather", request.city, request.start_date.isoformat(), request.days)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+        result = await self._query_weather_uncached(request)
+        self._cache_set(cache_key, result)
+        return result
+
+    async def _query_weather_uncached(self, request: TripPlanRequest) -> list[WeatherInfo]:
+        if self.settings.use_sample_data:
+            return sample_weather(request.start_date.isoformat(), request.days)
         location = city_center(request.city)
         if self.settings.has_amap:
             try:
                 location = await self._city_location(request.city) or location
-            except httpx.HTTPError:
-                pass
+            except httpx.HTTPError as exc:
+                log_event(
+                    logger,
+                    "amap.city_location_failed",
+                    level=logging.DEBUG,
+                    reason=type(exc).__name__,
+                    city=request.city,
+                )
+        if self.settings.has_qweather:
+            # Better precision over China; falls back to Open-Meteo when it
+            # cannot cover every requested date.
+            qweather = await self.qweather.daily_forecast(request, location)
+            if qweather is not None:
+                return qweather
+
         params = {
             "latitude": location.latitude,
             "longitude": location.longitude,
@@ -176,7 +288,17 @@ class AMapService:
             values = (dates, codes, high, low, speed, direction)
             if not all(len(value) == request.days for value in values):
                 raise ValueError("incomplete forecast")
-        except (httpx.HTTPError, ValueError, TypeError):
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            log_event(
+                logger,
+                "weather.unavailable",
+                level=logging.WARNING,
+                reason=type(exc).__name__,
+                city=request.city,
+                start_date=request.start_date.isoformat(),
+                days=request.days,
+                error=str(exc),
+            )
             return self._unavailable_weather_range(request, None)
         weather_map = {0: "\u6674", 1: "\u5927\u90e8\u6674\u6717", 2: "\u591a\u4e91", 3: "\u9634", 45: "\u96fe", 48: "\u51bb\u96fe", 51: "\u6bdb\u6bdb\u96e8", 53: "\u5c0f\u96e8", 55: "\u5bc6\u96e8", 61: "\u5c0f\u96e8", 63: "\u4e2d\u96e8", 65: "\u5927\u96e8", 71: "\u5c0f\u96ea", 73: "\u4e2d\u96ea", 75: "\u5927\u96ea", 80: "\u9635\u96e8", 81: "\u5f3a\u9635\u96e8", 82: "\u66b4\u96e8", 95: "\u96f7\u66b4\u96e8"}
         directions = ("\u5317", "\u4e1c\u5317", "\u4e1c", "\u4e1c\u5357", "\u5357", "\u897f\u5357", "\u897f", "\u897f\u5317")
@@ -229,6 +351,29 @@ class AMapService:
         destination: Location,
         request: TripPlanRequest,
     ) -> RouteLeg:
+        cache_key = (
+            "route",
+            round(origin.longitude, 4),
+            round(origin.latitude, 4),
+            round(destination.longitude, 4),
+            round(destination.latitude, 4),
+            request.transportation,
+        )
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return RouteLeg.model_validate(cached)  # type: ignore[arg-type]
+        leg = await self._estimate_route_uncached(origin_name, origin, destination_name, destination, request)
+        self._cache_set(cache_key, leg.model_dump())
+        return leg
+
+    async def _estimate_route_uncached(
+        self,
+        origin_name: str,
+        origin: Location,
+        destination_name: str,
+        destination: Location,
+        request: TripPlanRequest,
+    ) -> RouteLeg:
         if not self.settings.has_amap:
             return self._haversine_route(origin_name, origin, destination_name, destination, request.transportation)
 
@@ -245,7 +390,16 @@ class AMapService:
         try:
             payload = await self._get_json(self._route_endpoint(mode), params)
             parsed = self._parse_route_payload(payload, mode)
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.route_failed",
+                level=logging.DEBUG,
+                reason=type(exc).__name__,
+                mode=mode,
+                origin=origin_name,
+                destination=destination_name,
+            )
             parsed = None
 
         if parsed is None:
@@ -271,25 +425,50 @@ class AMapService:
         try:
             async with asyncio.timeout(8):
                 for keyword in keywords:
-                    results: list[dict[str, Any]] = []
-                    for search in (self._search_pois_v5, self._search_pois_v3):
-                        try:
-                            results = await search(city, keyword, types, page=1)
-                        except httpx.HTTPError:
-                            continue
-                        if results:
+                    page = 1
+                    while page <= MAX_POI_PAGES:
+                        results: list[dict[str, Any]] = []
+                        for search in (self._search_pois_v5, self._search_pois_v3):
+                            try:
+                                results = await search(city, keyword, types, page=page)
+                            except httpx.HTTPError as exc:
+                                log_event(
+                                    logger,
+                                    "amap.poi_search_failed",
+                                    level=logging.DEBUG,
+                                    reason=type(exc).__name__,
+                                    endpoint=search.__name__,
+                                    city=city,
+                                    keyword=keyword,
+                                    page=page,
+                                )
+                                continue
+                            if results:
+                                break
+                        if not results:
                             break
-                    for poi in results:
-                        name = self._text(poi.get("name"), "")
-                        identity = f"{self._normalize_name(name)}|{self._text(poi.get('location'), '')}"
-                        if not name or identity in seen:
-                            continue
-                        seen.add(identity)
-                        pois.append(poi)
-                        if len(pois) >= target_count:
-                            return pois
+                        for poi in results:
+                            name = self._text(poi.get("name"), "")
+                            identity = f"{self._normalize_name(name)}|{self._text(poi.get('location'), '')}"
+                            if not name or identity in seen:
+                                continue
+                            seen.add(identity)
+                            pois.append(poi)
+                            if len(pois) >= target_count:
+                                return pois
+                        if len(results) < POI_PAGE_SIZE:
+                            break
+                        page += 1
         except TimeoutError:
-            pass
+            log_event(
+                logger,
+                "amap.search_timeout",
+                level=logging.WARNING,
+                reason="timeout",
+                city=city,
+                collected=len(pois),
+                target_count=target_count,
+            )
         return pois
 
     async def _search_pois_v5(self, city: str, keyword: str, types: str, page: int) -> list[dict[str, Any]]:
@@ -320,18 +499,131 @@ class AMapService:
         payload = await self._get_json(f"{self.v3_base_url}/place/text", params)
         return payload.get("pois") or []
 
-    async def _city_adcode(self, city: str) -> str | None:
-        district = await self._city_district(city)
-        return district.get("adcode") if district else None
-
     async def _fallback_attractions(self, request: TripPlanRequest) -> list[Attraction]:
         center = None
         if self.settings.has_amap:
             try:
                 center = await self._city_location(request.city)
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                log_event(
+                    logger,
+                    "amap.fallback_center_failed",
+                    level=logging.DEBUG,
+                    reason=type(exc).__name__,
+                    city=request.city,
+                )
                 center = None
         return sample_attractions(request.city, request.preferences, center=center)
+
+    async def search_meals_around(
+        self,
+        request: TripPlanRequest,
+        location: Location,
+        radius: int = 2000,
+        limit: int = 10,
+    ) -> list[Meal]:
+        """Meals *near a point*, not anywhere in the city.
+
+        City-wide keyword search returns restaurants 15 km from the day's sights
+        (and often without coordinates, which made distance checks useless).
+        Anchoring the search at the hotel or the day's first stop fixes both.
+        """
+        if not self.settings.has_amap:
+            return []
+
+        cache_key = (
+            "meals_around",
+            round(location.longitude, 3),
+            round(location.latitude, 3),
+            radius,
+            request.budget,
+        )
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]
+
+        pois: list[dict[str, Any]] = []
+        try:
+            async with asyncio.timeout(8):
+                for search in (self._around_pois_v5, self._around_pois_v3):
+                    try:
+                        results = await search(location, radius)
+                    except httpx.HTTPError as exc:
+                        log_event(
+                            logger,
+                            "amap.around_search_failed",
+                            level=logging.DEBUG,
+                            reason=type(exc).__name__,
+                            endpoint=search.__name__,
+                        )
+                        continue
+                    if results:
+                        pois = results
+                        break
+        except TimeoutError:
+            log_event(
+                logger,
+                "amap.around_search_timeout",
+                level=logging.WARNING,
+                radius=radius,
+                longitude=location.longitude,
+                latitude=location.latitude,
+            )
+
+        meals: list[Meal] = []
+        seen: set[str] = set()
+        for poi in pois:
+            name = self._text(poi.get("name"), "")
+            poi_location = self._poi_location(poi)
+            normalized = self._normalize_name(name)
+            if not name or poi_location is None or normalized in seen:
+                continue
+            seen.add(normalized)
+            cost, price_source = self._meal_cost(request.budget, poi)
+            meals.append(
+                Meal(
+                    type="lunch",
+                    name=name,
+                    address=self._poi_address(poi, request.city),
+                    location=poi_location,
+                    description=self._poi_category(poi) or "本地餐饮",
+                    estimated_cost=cost,
+                    price_source=price_source,
+                    opening_hours=self._opening_hours(poi),
+                    source="amap",
+                )
+            )
+            if len(meals) >= limit:
+                break
+
+        self._cache_set(cache_key, meals)
+        return meals
+
+    async def _around_pois_v5(self, location: Location, radius: int) -> list[dict[str, Any]]:
+        params = {
+            "key": self.settings.amap_web_service_key,
+            "location": self._format_location(location),
+            "radius": radius,
+            "types": "050000",
+            "page_size": 25,
+            "page_num": 1,
+            "show_fields": "business",
+        }
+        payload = await self._get_json(f"{self.v5_base_url}/place/around", params)
+        return payload.get("pois") or []
+
+    async def _around_pois_v3(self, location: Location, radius: int) -> list[dict[str, Any]]:
+        params = {
+            "key": self.settings.amap_web_service_key,
+            "location": self._format_location(location),
+            "radius": radius,
+            "types": "050000",
+            "offset": 20,
+            "page": 1,
+            "extensions": "all",
+        }
+        payload = await self._get_json(f"{self.v3_base_url}/place/around", params)
+        return payload.get("pois") or []
 
     async def _city_location(self, city: str) -> Location | None:
         district = await self._city_district(city)
@@ -376,9 +668,9 @@ class AMapService:
     @staticmethod
     def _unavailable_weather(date: str, latest_forecast_date: str | None) -> WeatherInfo:
         if latest_forecast_date:
-            notice = f"行程日期超过高德天气预报最晚日期 {latest_forecast_date}，无法保证查询天气。"
+            notice = f"行程日期超过天气预报最晚日期 {latest_forecast_date}，无法保证查询天气。"
         else:
-            notice = "暂时无法获取高德天气预报，无法保证查询天气。"
+            notice = "暂时无法获取天气预报，无法保证查询天气。"
         return WeatherInfo(
             date=date,
             day_weather="暂无预报",
@@ -511,6 +803,48 @@ class AMapService:
         return biz_ext if isinstance(biz_ext, dict) else {}
 
     @staticmethod
+    def _opening_hours(poi: dict[str, Any]) -> str | None:
+        """Raw opening-hours text from AMap, kept as-is so the UI can show the source."""
+        business = AMapService._biz_ext(poi)
+        for key in ("opentime_week", "opentime_today", "open_time", "opentime"):
+            value = business.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _poi_photo(poi: dict[str, Any]) -> str | None:
+        photos = poi.get("photos")
+        if not isinstance(photos, list):
+            return None
+        for photo in photos:
+            if isinstance(photo, dict):
+                url = photo.get("url")
+                if isinstance(url, str) and url.strip():
+                    return url.strip()
+        return None
+
+    @staticmethod
+    def _poi_phone(poi: dict[str, Any]) -> str | None:
+        tel = AMapService._biz_ext(poi).get("tel")
+        if isinstance(tel, str):
+            cleaned = tel.strip()
+            if cleaned and cleaned != "[]":
+                return cleaned
+        return None
+
+    @staticmethod
+    def _poi_level(poi: dict[str, Any]) -> str | None:
+        business = AMapService._biz_ext(poi)
+        keytag = business.get("keytag")
+        if isinstance(keytag, str) and any(mark in keytag for mark in ("A级", "景区", "5A", "4A", "3A")):
+            return keytag.strip()
+        level = business.get("level")
+        if isinstance(level, str) and level.strip():
+            return level.strip()
+        return None
+
+    @staticmethod
     def _poi_rating(poi: dict[str, Any]) -> float | None:
         return AMapService._parse_rating(AMapService._biz_ext(poi).get("rating"))
 
@@ -535,12 +869,17 @@ class AMapService:
             return None
 
     @staticmethod
-    def _estimate_ticket_price(category: str) -> int:
-        if "博物馆" in category:
-            return 50
-        if "风景" in category or "公园" in category:
-            return 30
-        return 60
+    def _ticket_price(category: str) -> tuple[int, str]:
+        """Return (price, price_source). Never invent a price we cannot justify."""
+        if not category or category == "景点":
+            return 0, "unknown"
+        if any(keyword in category for keyword in ("博物馆", "美术馆", "展览馆", "科技馆")):
+            return 50, "estimated"
+        if any(keyword in category for keyword in ("风景", "公园", "广场")):
+            return 30, "estimated"
+        if any(keyword in category for keyword in ("纪念", "寺", "塔", "古镇")):
+            return 60, "estimated"
+        return 0, "unknown"
 
     @staticmethod
     def _estimate_visit_duration(category: str, name: str) -> int:
@@ -565,6 +904,20 @@ class AMapService:
         if biz_cost:
             return biz_cost
         return cost_map.get(budget, 85)
+
+    @staticmethod
+    def _hotel_cost(budget: str, accommodation: str, poi: dict[str, Any]) -> tuple[int, str]:
+        business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
+        if business_cost:
+            return business_cost, "api"
+        return AMapService._estimate_hotel_cost(budget, accommodation, {}), "estimated"
+
+    @staticmethod
+    def _meal_cost(budget: str, poi: dict[str, Any]) -> tuple[int, str]:
+        business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
+        if business_cost:
+            return business_cost, "api"
+        return AMapService._estimate_meal_cost(budget, {}), "estimated"
 
     @staticmethod
     def _to_int(value: object) -> int | None:

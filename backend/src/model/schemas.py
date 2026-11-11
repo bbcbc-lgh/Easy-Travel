@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MAX_TRIP_DAYS = 14
+
 
 class Location(BaseModel):
     longitude: float = Field(..., description="经度", ge=-180, le=180)
@@ -19,6 +21,12 @@ class Attraction(BaseModel):
     rating: float | None = Field(None, ge=0, le=5, description="评分")
     image_url: str | None = Field(None, description="图片URL")
     ticket_price: int = Field(0, ge=0, description="门票价格(元)")
+    price_source: Literal["api", "estimated", "unknown"] = Field(
+        "estimated", description="门票价格来源：接口返回/规则估算/无法确认"
+    )
+    opening_hours: str | None = Field(None, description="营业/开放时间原文，来源于数据接口")
+    contact_phone: str | None = Field(None, description="联系电话，来源于数据接口")
+    level: str | None = Field(None, description="景区等级等标签，如 5A景区")
     source: Literal["amap", "sample"] = Field("sample", description="place data source")
 
 
@@ -29,6 +37,10 @@ class Meal(BaseModel):
     location: Location | None = Field(None, description="经纬度坐标")
     description: str | None = Field(None, description="描述")
     estimated_cost: int = Field(0, ge=0, description="预估费用(元)")
+    price_source: Literal["api", "estimated", "unknown"] = Field(
+        "estimated", description="人均价格来源：接口返回/规则估算/无法确认"
+    )
+    opening_hours: str | None = Field(None, description="营业时间原文，来源于数据接口")
     source: Literal["amap", "sample"] = Field("sample", description="meal data source")
 
 
@@ -41,6 +53,9 @@ class Hotel(BaseModel):
     distance: str = Field("", description="距离景点距离")
     type: str = Field("", description="酒店类型")
     estimated_cost: int = Field(0, ge=0, description="预估费用(元/晚)")
+    price_source: Literal["api", "estimated", "unknown"] = Field(
+        "estimated", description="房价来源：接口返回/规则估算/无法确认"
+    )
     source: Literal["amap", "sample"] = Field("sample", description="hotel data source")
 
 
@@ -68,6 +83,42 @@ class PlanQuality(BaseModel):
     score: int = Field(100, ge=0, le=100, description="行程质量评分")
     warnings: list[str] = Field(default_factory=list, description="需要用户注意的问题")
     checks: dict[str, bool] = Field(default_factory=dict, description="质量检查结果")
+
+
+class DayEdit(BaseModel):
+    """What the model may change on a single day. It never rewrites the whole plan."""
+
+    day_index: int = Field(..., ge=0, description="第几天(从0开始)")
+    remove_attractions: list[str] = Field(default_factory=list, description="要移除的景点名称")
+    add_attractions: list[str] = Field(default_factory=list, description="要新增的景点名称，必须来自候选列表")
+    description: str | None = Field(None, description="新的当日说明；为空表示不改")
+    meals: list[str] | None = Field(None, description="替换当天的餐饮，必须来自候选列表；为空表示不改")
+    hotel: str | None = Field(None, description="更换酒店，必须来自候选列表；为空表示不改")
+
+
+class PlanPatch(BaseModel):
+    """The only thing the model returns for a conversational edit."""
+
+    days: list[DayEdit] = Field(default_factory=list, description="按天组织的变更")
+    overall_suggestions: str | None = Field(None, description="更新后的整体建议")
+    reply: str = Field(..., min_length=1, description="一句话说明改了什么")
+
+
+class PlanDecisionDay(BaseModel):
+    """What the model is allowed to decide for one day: choices, not facts."""
+
+    day_index: int = Field(..., ge=0, description="第几天(从0开始)")
+    description: str = Field(..., min_length=1, description="当日安排与理由")
+    attractions: list[str] = Field(default_factory=list, description="只能取候选景点名称")
+    meals: list[str] = Field(default_factory=list, description="只能取候选餐饮名称")
+    hotel: str | None = Field(None, description="只能取候选酒店名称")
+
+
+class PlanDecision(BaseModel):
+    """The model's entire output contract: names only, never coordinates or prices."""
+
+    days: list[PlanDecisionDay] = Field(default_factory=list, description="每日选择")
+    overall_suggestions: str | None = Field(None, description="整体建议")
 
 
 class RouteLeg(BaseModel):
@@ -100,7 +151,7 @@ class WeatherInfo(BaseModel):
     wind_power: str = Field(..., description="风力")
     forecast_available: bool = Field(True, description="是否有可信天气预报")
     notice: str | None = Field(None, description="天气提示")
-    source: Literal["amap", "open_meteo", "sample", "unavailable"] = Field("unavailable", description="weather data source")
+    source: Literal["amap", "open_meteo", "qweather", "sample", "unavailable"] = Field("unavailable", description="weather data source")
 
     @field_validator("day_temp", "night_temp", mode="before")
     @classmethod
@@ -118,11 +169,19 @@ class TripPlanRequest(BaseModel):
     city: str = Field(..., min_length=1, max_length=50, description="目的地城市")
     start_date: date = Field(..., description="开始日期")
     end_date: date | None = Field(None, description="结束日期")
-    days: int = Field(3, ge=1, le=14, description="旅行天数")
+    days: int = Field(3, ge=1, le=MAX_TRIP_DAYS, description="旅行天数")
     preferences: str = Field("历史文化", max_length=300, description="旅行偏好")
     budget: Literal["经济", "中等", "舒适", "豪华"] = Field("中等", description="预算档位")
     transportation: str = Field("公共交通", max_length=50, description="交通方式")
     accommodation: str = Field("经济型酒店", max_length=50, description="住宿偏好")
+
+    @field_validator("city")
+    @classmethod
+    def strip_city(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("city must not be blank")
+        return cleaned
 
     @model_validator(mode="after")
     def normalize_dates(self) -> "TripPlanRequest":
@@ -133,6 +192,9 @@ class TripPlanRequest(BaseModel):
             if delta_days <= 0:
                 raise ValueError("end_date must be greater than or equal to start_date")
             self.days = delta_days
+        # ``days`` was mutated above, so re-check the bound the field declares.
+        if not 1 <= self.days <= MAX_TRIP_DAYS:
+            raise ValueError(f"trip length must be between 1 and {MAX_TRIP_DAYS} days")
         return self
 
 
@@ -146,6 +208,8 @@ class TripPlan(BaseModel):
     overall_suggestions: str = Field(..., description="总体建议")
     budget: Budget | None = Field(None, description="预算信息")
     quality: PlanQuality | None = Field(None, description="行程质量评估")
+    degraded: bool = Field(False, description="是否降级为规则引擎生成")
+    degraded_reason: str | None = Field(None, description="降级原因")
     data_notices: list[str] = Field(default_factory=list, description="data availability notices")
 
 
@@ -163,3 +227,20 @@ class TripPlanSummary(BaseModel):
     days: int
     created_at: str
     updated_at: str
+
+
+class ReviseRequest(BaseModel):
+    instruction: str = Field(..., min_length=1, max_length=300, description="自然语言的修改要求")
+
+    @field_validator("instruction")
+    @classmethod
+    def strip_instruction(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("instruction must not be blank")
+        return cleaned
+
+
+class ReviseResponse(BaseModel):
+    plan: TripPlan
+    reply: str

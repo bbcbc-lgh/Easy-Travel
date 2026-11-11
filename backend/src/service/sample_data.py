@@ -1,4 +1,4 @@
-from src.Model.Schemas import Attraction, Hotel, Location, Meal, WeatherInfo
+from src.model.schemas import Attraction, Hotel, Location, Meal, WeatherInfo
 
 
 CITY_CENTERS: dict[str, Location] = {

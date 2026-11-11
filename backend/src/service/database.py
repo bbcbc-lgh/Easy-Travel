@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from src.Config import Settings
-from src.Model.Schemas import TripPlan, TripPlanRequest
+from src.config import Settings
+from src.model.schemas import TripPlan, TripPlanRequest
+
+LEGACY_OWNER = "legacy"
 
 
 class TripPlanRepository:
@@ -21,6 +23,7 @@ class TripPlanRepository:
                 """
                 CREATE TABLE IF NOT EXISTS trip_plans (
                     id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL DEFAULT 'legacy',
                     city TEXT NOT NULL,
                     start_date TEXT NOT NULL,
                     end_date TEXT NOT NULL,
@@ -32,14 +35,23 @@ class TripPlanRepository:
                 )
                 """
             )
+            self._migrate_owner_column(connection)
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_trip_plans_created_at
-                ON trip_plans(created_at DESC)
+                CREATE INDEX IF NOT EXISTS idx_trip_plans_owner_created_at
+                ON trip_plans(owner_id, created_at DESC)
                 """
             )
 
-    def save_plan(self, request: TripPlanRequest, plan: TripPlan) -> TripPlan:
+    @staticmethod
+    def _migrate_owner_column(connection: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(trip_plans)")}
+        if "owner_id" not in columns:
+            connection.execute(
+                f"ALTER TABLE trip_plans ADD COLUMN owner_id TEXT NOT NULL DEFAULT '{LEGACY_OWNER}'"
+            )
+
+    def save_plan(self, request: TripPlanRequest, plan: TripPlan, owner_id: str) -> TripPlan:
         plan_id = plan.id or uuid4().hex
         now = self._now()
         plan.id = plan_id
@@ -48,10 +60,10 @@ class TripPlanRepository:
             connection.execute(
                 """
                 INSERT INTO trip_plans (
-                    id, city, start_date, end_date, days,
+                    id, owner_id, city, start_date, end_date, days,
                     request_json, plan_json, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     city = excluded.city,
                     start_date = excluded.start_date,
@@ -63,6 +75,7 @@ class TripPlanRepository:
                 """,
                 (
                     plan_id,
+                    owner_id,
                     plan.city,
                     plan.start_date,
                     plan.end_date,
@@ -75,9 +88,8 @@ class TripPlanRepository:
             )
         return plan
 
-    def update_plan(self, plan_id: str, plan: TripPlan) -> TripPlan | None:
-        existing = self.get_plan(plan_id)
-        if existing is None:
+    def update_plan(self, plan_id: str, plan: TripPlan, owner_id: str) -> TripPlan | None:
+        if self.get_plan(plan_id, owner_id) is None:
             return None
         plan.id = plan_id
         now = self._now()
@@ -87,7 +99,7 @@ class TripPlanRepository:
                 UPDATE trip_plans
                 SET city = ?, start_date = ?, end_date = ?, days = ?,
                     plan_json = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND owner_id = ?
                 """,
                 (
                     plan.city,
@@ -97,33 +109,52 @@ class TripPlanRepository:
                     plan.model_dump_json(),
                     now,
                     plan_id,
+                    owner_id,
                 ),
             )
         return plan if cursor.rowcount else None
 
-    def get_plan(self, plan_id: str) -> TripPlan | None:
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT plan_json FROM trip_plans WHERE id = ?",
-                (plan_id,),
-            ).fetchone()
+    def get_plan(self, plan_id: str, owner_id: str) -> TripPlan | None:
+        row = self._fetch_plan_row(plan_id, owner_id)
         if row is None:
             return None
         return TripPlan.model_validate_json(row["plan_json"])
 
-    def list_plans(self, limit: int = 20) -> list[dict[str, Any]]:
+    def get_request(self, plan_id: str, owner_id: str) -> TripPlanRequest | None:
+        row = self._fetch_plan_row(plan_id, owner_id)
+        if row is None:
+            return None
+        return TripPlanRequest.model_validate_json(row["request_json"])
+
+    def delete_plan(self, plan_id: str, owner_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM trip_plans WHERE id = ? AND owner_id = ?",
+                (plan_id, owner_id),
+            )
+        return bool(cursor.rowcount)
+
+    def list_plans(self, owner_id: str, limit: int = 20) -> list[dict[str, Any]]:
         safe_limit = max(1, min(limit, 100))
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT id, city, start_date, end_date, days, created_at, updated_at
                 FROM trip_plans
+                WHERE owner_id = ?
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (safe_limit,),
+                (owner_id, safe_limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def _fetch_plan_row(self, plan_id: str, owner_id: str) -> sqlite3.Row | None:
+        with self._connect() as connection:
+            return connection.execute(
+                "SELECT plan_json, request_json FROM trip_plans WHERE id = ? AND owner_id = ?",
+                (plan_id, owner_id),
+            ).fetchone()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
