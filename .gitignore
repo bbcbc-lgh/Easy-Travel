@@ -15,10 +15,8 @@ frontend/tsconfig.tsbuildinfo
 frontend/src/**/*.js
 frontend/src/**/*.js.map
 
-# Local working notes (not for version control), except the platform playbook —
-# a project asset that must survive a fresh clone, unlike the reports beside it.
-outputs/*
-!outputs/平台化升级指导书.md
+# Local working notes (not for version control)
+outputs/
 
 # Editor and OS
 .idea/
