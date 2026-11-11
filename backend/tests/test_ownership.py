@@ -1,21 +1,34 @@
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.api.security import LOCAL_OWNER
 
 raw_client = TestClient(app)
 
 
-def test_missing_client_id_is_rejected() -> None:
+def test_missing_client_id_falls_back_to_local() -> None:
+    """A single-user instance must serve ``curl`` and ``/docs`` without ceremony."""
     response = raw_client.get("/api/trip/plans")
 
-    assert response.status_code == 401
-    assert "X-Client-Id" in response.headers.get("www-authenticate", "")
+    assert response.status_code == 200
+    assert response.json() == []
 
 
-def test_invalid_client_id_is_rejected() -> None:
+def test_invalid_client_id_falls_back_to_local() -> None:
     response = raw_client.get("/api/trip/plans", headers={"X-Client-Id": "short"})
 
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_requests_without_an_id_share_the_local_bucket(owned_client, plan_payload, offline_mode) -> None:
+    """Header-less callers still get their own isolated bucket, not an error."""
+    created = raw_client.post("/api/trip/plan", json=plan_payload()).json()
+
+    assert [item["id"] for item in raw_client.get("/api/trip/plans").json()] == [created["id"]]
+    # A browser that does send an id must not see the header-less bucket.
+    assert owned_client.get("/api/trip/plans").json() == []
+    assert LOCAL_OWNER == "local"
 
 
 def test_health_stays_public() -> None:

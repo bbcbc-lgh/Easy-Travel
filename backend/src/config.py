@@ -35,6 +35,8 @@ class Settings(BaseSettings):
 
     database_path: str = "data/easy_travel.sqlite3"
 
+    # Local cost protection, not a product quota: it only guards the API keys the
+    # user put in `.env` against an accidental loop.
     plan_daily_limit: int = 20
     plan_max_concurrency: int = 2
     plan_queue_timeout_seconds: float = 8.0
@@ -115,9 +117,11 @@ class Settings(BaseSettings):
             "qweather.host": self.qweather_host,
             "sample_data": self.use_sample_data,
             "database_path": self.database_path,
-            "limits.daily": self.plan_daily_limit,
-            "limits.max_concurrency": self.plan_max_concurrency,
-            "limits.queue_timeout_seconds": self.plan_queue_timeout_seconds,
+            # "cost_guard" rather than "limits": this protects the user's own API
+            # keys, it is not a product-level quota.
+            "cost_guard.daily": self.plan_daily_limit,
+            "cost_guard.max_concurrency": self.plan_max_concurrency,
+            "cost_guard.queue_timeout_seconds": self.plan_queue_timeout_seconds,
             "quality.max_revisions": self.plan_max_revisions,
             "cache.enabled": self.cache_enabled,
             "cache.ttl_seconds": self.cache_ttl_seconds,

@@ -19,13 +19,15 @@ def parse_events(body: str) -> list[dict]:
     return events
 
 
-def test_stream_requires_client_id() -> None:
+def test_stream_works_without_client_id() -> None:
+    """No header is required: header-less callers land in the local bucket."""
     from fastapi.testclient import TestClient
 
     from src.api.main import app
 
-    response = TestClient(app).post("/api/trip/plan/stream", json={})
-    assert response.status_code == 401
+    with TestClient(app).stream("POST", "/api/trip/plan/stream", json={}) as response:
+        # Empty body must be a validation error, not an auth error.
+        assert response.status_code == 422
 
 
 def test_stream_emits_stages_then_plan(owned_client, plan_payload, offline_mode) -> None:

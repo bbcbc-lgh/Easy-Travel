@@ -135,7 +135,7 @@ async def stream_trip_plan(
             while True:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=STREAM_HEARTBEAT_SECONDS)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if await http_request.is_disconnected():
                         log_event(logger, "plan.stream_disconnected", level=logging.INFO, owner_id=owner_id)
                         break
