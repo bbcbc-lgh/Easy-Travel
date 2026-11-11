@@ -1,0 +1,21 @@
+# Normalise line endings for every clone, regardless of the contributor's OS.
+# Without this the repo stores LF while a Windows checkout (core.autocrlf) turns
+# it into CRLF, so the same file shows as modified on one machine and not another.
+* text=auto eol=lf
+
+# Shell scripts must stay LF: a CRLF shebang line fails on Linux/macOS with
+# "bad interpreter: /usr/bin/env: not found".
+*.sh  text eol=lf
+# PowerShell prefers CRLF, and Windows tooling handles it better.
+*.ps1 text eol=crlf
+
+# Binary assets: never normalise.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.pdf   binary
+*.sqlite3 binary

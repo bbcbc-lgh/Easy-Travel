@@ -1,7 +1,8 @@
--r requirements.txt
+﻿-r requirements.txt
 pytest==9.2.0
 ruff==0.17.4
 pyright==1.1.414
+pytest-cov==7.0.0
 # pytest-asyncio is intentionally absent: every async test here drives its own
 # loop with asyncio.run(), so the plugin was unused -- and it pinned pytest < 9,
 # which blocked a pytest security release.

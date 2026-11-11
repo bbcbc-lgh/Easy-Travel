@@ -14,6 +14,8 @@ frontend/.env
 frontend/tsconfig.tsbuildinfo
 frontend/src/**/*.js
 frontend/src/**/*.js.map
+frontend/playwright-report/
+frontend/test-results/
 
 # Local working notes (not for version control)
 outputs/
