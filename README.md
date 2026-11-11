@@ -230,6 +230,17 @@ pip install pre-commit
 pre-commit install
 ```
 
+跑 e2e 前需要先装一次浏览器。**国内网络下官方 CDN 通常下不动**，走镜像：
+
+```bash
+# 先装浏览器（只需一次）
+$env:PLAYWRIGHT_DOWNLOAD_HOST="https://cdn.npmmirror.com/binaries/playwright"   # Windows
+export PLAYWRIGHT_DOWNLOAD_HOST="https://cdn.npmmirror.com/binaries/playwright"  # macOS / Linux
+npx playwright install chromium
+```
+
+CI 里用的是官方 CDN，所以 `--with-deps` 那套只在 CI 需要。
+
 ### 质量门禁一览
 
 | 检查 | 后端 | 前端 |
