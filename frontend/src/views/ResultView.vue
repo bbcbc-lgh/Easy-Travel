@@ -70,7 +70,8 @@
             <template #overlay>
               <a-menu>
                 <a-menu-item @click="exportAsImage">导出图片</a-menu-item>
-                <a-menu-item @click="exportAsPDF">导出 PDF</a-menu-item>
+                <a-menu-item @click="exportAsPDF">导出 PDF（图片版）</a-menu-item>
+                <a-menu-item @click="printPlan">打印 / 另存为 PDF（文字可选）</a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -368,15 +369,26 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { deleteTripPlan, getTripPlan, reviseTripPlan, updateTripPlan } from '../services/api'
-import type { Attraction, PriceSource, TripPlan } from '../types/trip'
+import type { TripPlan } from '../types/trip'
 import { paginateCanvas } from '../utils/pdf'
+import {
+  degradedReasonLabel,
+  formatDistance,
+  mealTypeLabel,
+  moveItem,
+  nightsFor,
+  priceText,
+  removeAt,
+  ticketText,
+  weatherSourceLabel
+} from '../utils/plan'
 
 const router = useRouter()
 const route = useRoute()
 const selectedKeys = ref(['overview'])
 const editMode = ref(false)
 const saving = ref(false)
-const exporting = ref<'' | 'image' | 'pdf'>('')
+const exporting = ref<'' | 'image' | 'pdf' | 'print'>('')
 const originalPlan = ref<TripPlan | null>(null)
 const mapReady = ref(false)
 const mapStatus = ref('正在准备地图')
@@ -384,7 +396,7 @@ const mapStatus = ref('正在准备地图')
 const routePlanId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
-const hotelNights = computed(() => Math.max((tripPlan.value?.days.length || 1) - 1, 0))
+const hotelNights = computed(() => nightsFor(tripPlan.value?.days.length || 1))
 const expandedDayIndices = ref<number[]>([0])
 const qualityWarnings = computed(() => tripPlan.value?.quality?.warnings || [])
 const reviseInstruction = ref('')
@@ -466,76 +478,19 @@ function cancelEdit() {
 function moveAttraction(dayIndex: number, attractionIndex: number, direction: 'up' | 'down') {
   const attractions = tripPlan.value?.days[dayIndex]?.attractions
   if (!attractions) return
-  const newIndex = direction === 'up' ? attractionIndex - 1 : attractionIndex + 1
-  const current = attractions[attractionIndex]
-  const target = attractions[newIndex]
-  // Both indices must be in range: swap explicitly instead of destructuring two
-  // possibly-undefined lookups.
-  if (!current || !target) return
-  attractions[attractionIndex] = target
-  attractions[newIndex] = current
+  moveItem(attractions, attractionIndex, direction)
 }
 
 function deleteAttraction(dayIndex: number, attractionIndex: number) {
-  tripPlan.value?.days[dayIndex]?.attractions.splice(attractionIndex, 1)
+  const attractions = tripPlan.value?.days[dayIndex]?.attractions
+  if (!attractions) return
+  removeAt(attractions, attractionIndex)
 }
 
 function persistPlan() {
   if (tripPlan.value) {
     sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
   }
-}
-
-function formatDistance(value: number) {
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(1)} 公里`
-  }
-  return `${value} 米`
-}
-
-function mealTypeLabel(type: string) {
-  return { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' }[type] || '餐饮'
-}
-
-function weatherSourceLabel(source?: string) {
-  return (
-    {
-      amap: '高德天气',
-      open_meteo: '天气预报',
-      qweather: '和风天气',
-      sample: '演示天气',
-      unavailable: '暂无预报'
-    }[source || 'unavailable'] || '暂无预报'
-  )
-}
-
-function priceText(value: number, source?: PriceSource) {
-  if (source === 'unknown') return '以现场为准'
-  if (source === 'estimated') return `约 ${value} 元（估算）`
-  return `${value} 元`
-}
-
-function ticketText(attraction: Attraction) {
-  if (attraction.price_source === 'unknown') return '门票以现场为准'
-  return `门票 ${priceText(attraction.ticket_price, attraction.price_source)}`
-}
-
-function degradedReasonLabel(reason?: string | null) {
-  const labels: Record<string, string> = {
-    llm_disabled: '未配置可用的模型服务',
-    llm_provider_timeout: '模型响应超时',
-    llm_provider_connection: '无法连接模型服务',
-    llm_rate_limited: '模型服务限流',
-    llm_http_401: '模型服务鉴权失败',
-    llm_http_429: '模型服务限流',
-    llm_schema_invalid: '模型输出未通过校验',
-    llm_empty_content: '模型返回空内容',
-    llm_truncated: '模型输出被截断',
-    llm_invalid_json: '模型返回内容不是合法 JSON',
-    llm_budget_exhausted: '模型调用超出时间预算'
-  }
-  if (!reason) return '模型暂不可用'
-  return labels[reason] || reason
 }
 
 function confirmDelete() {
@@ -646,26 +601,39 @@ async function initMap() {
   }
 }
 
+/**
+ * Expand every day card and wait for the lazy images, so a capture or a print
+ * shows the whole plan. Returns a function that restores what was expanded.
+ */
+async function revealWholePlan(): Promise<() => void> {
+  const visibleDays = [...expandedDayIndices.value]
+  if (!tripPlan.value) return () => undefined
+  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
+  await nextTick()
+  // Day cards use loading="lazy": sections revealed just now are often not
+  // decoded yet, and html2canvas would capture them as blank boxes.
+  const element = document.getElementById('trip-plan-content')
+  const images = element ? Array.from(element.querySelectorAll('img')) : []
+  await Promise.all(
+    images.map((image) =>
+      image.complete ? Promise.resolve() : image.decode().catch(() => undefined)
+    )
+  )
+  return () => {
+    expandedDayIndices.value = visibleDays
+  }
+}
+
 async function capturePlanContent() {
   const element = document.getElementById('trip-plan-content')
   if (!element || !tripPlan.value) return null
   // html2canvas is heavy and only needed on export: load it on demand.
   const { default: html2canvas } = await import('html2canvas')
-  const visibleDays = [...expandedDayIndices.value]
-  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
-  await nextTick()
+  const restore = await revealWholePlan()
   try {
-    // Day cards use loading="lazy": sections revealed just now are often not
-    // decoded yet, and html2canvas would capture them as blank boxes.
-    const images = Array.from(element.querySelectorAll('img'))
-    await Promise.all(
-      images.map((image) =>
-        image.complete ? Promise.resolve() : image.decode().catch(() => undefined)
-      )
-    )
     return await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
   } finally {
-    expandedDayIndices.value = visibleDays
+    restore()
   }
 }
 
@@ -717,9 +685,11 @@ async function exportAsPDF() {
         slice.height
       )
       if (index > 0) pdf.addPage()
+      // JPEG, not PNG: a two-day plan was a multi-megabyte file when every page
+      // was a lossless screenshot, and the content is text on white.
       pdf.addImage(
-        pageCanvas.toDataURL('image/png'),
-        'PNG',
+        pageCanvas.toDataURL('image/jpeg', 0.92),
+        'JPEG',
         margin,
         margin,
         contentWidth,
@@ -731,6 +701,20 @@ async function exportAsPDF() {
   } catch (error) {
     message.error(`导出 PDF 失败：${error instanceof Error ? error.message : '请稍后再试'}`)
   } finally {
+    exporting.value = ''
+  }
+}
+
+async function printPlan() {
+  if (!tripPlan.value || exporting.value) return
+  exporting.value = 'print'
+  const restore = await revealWholePlan()
+  try {
+    // The print dialog's "save as PDF" produces real, selectable text with the
+    // system's own Chinese font; the raster export stays for pixel-exact layout.
+    window.print()
+  } finally {
+    restore()
     exporting.value = ''
   }
 }

@@ -1381,3 +1381,62 @@ select:focus-visible,
     grid-column: 2;
   }
 }
+
+/* --- print: A4, whole plan expanded, no app chrome -------------------------- */
+
+/* The "print / save as PDF" path is the only one that produces real text: the
+   html2canvas export stays for pixel-exact layout, but its PDF is an image. */
+@page {
+  size: a4;
+  margin: 12mm;
+}
+
+@media print {
+  .side-nav,
+  .header-actions,
+  #map,
+  #revise,
+  [data-html2canvas-ignore] {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .result-shell {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
+
+  .result-content {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Never split a day card, a stop or a meal across two pages. */
+  .day-card,
+  .attraction-item,
+  .meal-item {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  /* A heading alone at the bottom of a page reads as a mistake. */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* Paper has no affordance for a button or a hover state. */
+  .ant-btn,
+  .ant-tag {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    color: inherit !important;
+  }
+}
