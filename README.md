@@ -111,6 +111,7 @@ npm run dev
 | `LLM_MODEL` | 是 | 模型名 |
 | `LLM_TIMEOUT_SECONDS` | 否 | 单次调用超时，默认 120 |
 | `LLM_MAX_TOKENS` | 否 | 输出上限，`0` = 服务商默认。推理型模型的思考 token 也占这个预算 |
+| `LLM_REASONING_EFFORT` | 否 | 推理模型的思考预算：`minimal` / `low` / `medium` / `high`。实测 `minimal` 把 3 天行程从约 45s 降到约 28s，评分不变；留空用服务商默认 |
 | `LLM_PROFILES` | 否 | 多模型回退链（JSON 数组），不填则由 `LLM_MODEL` 生成单个 |
 | `AMAP_WEB_KEY` | 建议 | 高德 Web 服务 Key；留空则用样例地点 |
 | `QWEATHER_API_KEY` | 否 | 和风天气 Key；配置后优先取预报 |
@@ -149,6 +150,8 @@ npm run dev
 ## 费用
 
 一次生成大约消耗 **600–1000 输入 token + 3000–7000 输出 token**，其中大部分是推理模型的思考 token。按常见 API 价格，一次约几分钱到几毛钱人民币。
+
+耗时方面：默认配置约 25–45 秒；把 `LLM_REASONING_EFFORT` 设为 `minimal` 可降到 18–29 秒，评分基本不变。
 
 想先看看效果、不想花钱：把 `USE_SAMPLE_DATA=true`，或用 `python -m evals --mode sample` 离线跑一遍 24 个用例。
 

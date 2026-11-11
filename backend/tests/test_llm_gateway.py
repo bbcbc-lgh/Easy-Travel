@@ -240,3 +240,16 @@ def test_valid_payload_skips_repair() -> None:
 
     assert result.repaired is False
     assert len(client.calls) == 1
+
+def test_flat_settings_carry_reasoning_effort() -> None:
+    profile = Settings(llm_reasoning_effort="minimal").model_profiles[0]
+
+    assert profile.supports_reasoning_effort is True
+    assert profile.reasoning_effort == "minimal"
+
+
+def test_reasoning_effort_is_off_by_default() -> None:
+    profile = Settings(llm_reasoning_effort="").model_profiles[0]
+
+    assert profile.supports_reasoning_effort is False
+    assert profile.reasoning_effort is None

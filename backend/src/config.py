@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 120.0
     llm_max_tokens: int = 0
+    llm_reasoning_effort: str = ""
     llm_total_budget_seconds: float = 150.0
     llm_profiles: list[ModelProfile] = Field(default_factory=list)
 
@@ -85,6 +86,8 @@ class Settings(BaseSettings):
                 api_key=self.llm_api_key or None,
                 timeout_seconds=self.llm_timeout_seconds,
                 max_tokens=self.llm_max_tokens,
+                supports_reasoning_effort=bool(self.llm_reasoning_effort),
+                reasoning_effort=self.llm_reasoning_effort or None,
             )
         ]
 
@@ -94,7 +97,8 @@ class Settings(BaseSettings):
         amap = mask_secret(self.amap_web_service_key)
         profiles = " > ".join(
             f"{profile.name}(tier={profile.tier},timeout={profile.timeout_seconds}s,"
-            f"max_tokens={profile.max_tokens or 'default'},retries={profile.max_retries})"
+            f"max_tokens={profile.max_tokens or 'default'},retries={profile.max_retries},"
+            f"reasoning_effort={profile.reasoning_effort or 'default'})"
             for profile in self.model_profiles
         )
         return {
