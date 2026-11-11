@@ -204,19 +204,44 @@ python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-ruff check src tests evals          # 后端 lint
-python -m pyright                   # 类型检查（需要 backend/.venv，配置在 pyproject.toml）
-pip-audit -r requirements.txt       # 依赖漏洞扫描（当前 0 条）
-python -m pytest -q                 # 185 个测试，含离线模式
+ruff check src tests evals          # 后端 lint（含 flake8-bandit 安全规则）
+ruff format --check src tests evals # 格式检查
+python -m pyright                   # 类型检查（0 错误）
+pip-audit -r requirements.txt       # 依赖漏洞
+pip check                           # 依赖一致性
+python -m pytest -q                 # 185 个测试 + 覆盖率（当前 81%）
 python -m evals --mode sample       # 24 条 golden case 的离线评测基线（当前 mean ≈ 72）
 python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
 cd ../frontend
-npm run lint                        # ESLint
-npm test                            # Vitest 单元测试（9 个）
+npm run lint                        # ESLint（含类型感知与无障碍规则）
+npm run lint:style                  # stylelint
+npm run format:check                # Prettier
+npm test                            # Vitest 单测（9 个，覆盖率当前 12.9%）
+npm run test:e2e                    # Playwright：生成 / 编辑保存 / 导出 PDF
 npm run build                       # 类型检查 + 打包
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑依赖审计、lint、类型检查、后端测试、离线评测和前端构建。
+以上全部在 CI 里跑（`.github/workflows/ci.yml`），后端另外跑 Python 3.11 与 3.13 两个版本。
+
+想在提交前就拿到反馈（而不是等 CI），装一次钩子：
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+### 质量门禁一览
+
+| 检查 | 后端 | 前端 |
+|---|---|---|
+| lint | `ruff check`（E/F/I/UP/B/S） | `eslint`（recommended + 类型感知 + a11y，`--max-warnings=0`） |
+| 格式 | `ruff format --check` | `prettier --check` + `stylelint` |
+| 类型 | `pyright`（standard，src + evals） | `vue-tsc`（strict + `noUncheckedIndexedAccess`） |
+| 测试 | `pytest` 185 个，覆盖率 81% | Vitest 9 个（覆盖率 12.9%）+ Playwright 3 条关键路径 |
+| 依赖 | `pip-audit` + `pip check` | `npm audit --audit-level=high` |
+| 自动升级 | Dependabot（pip / npm / actions） | 同左 |
+
+覆盖率**只测量不设门槛**：数字用来定位该补哪里，不当作"代码对不对"的证明。
 
 > 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 
