@@ -48,7 +48,11 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
                 latitude=round(center.latitude + ((index % 3) - 1) * 0.012, 6),
             ),
             visit_duration=duration,
-            description=f"{description}。已结合你的偏好：{preferences}。",
+            # A static template must not claim to have honoured a preference
+            # ("带儿童出行", "无障碍设施"), so the description carries no echo of the
+            # request. The eval's preference metric ignores this field for the
+            # same reason: prose is not evidence about the place.
+            description=f"{description}。（演示数据，未按个人偏好筛选）",
             category=category,
             rating=rating,
             ticket_price=price,

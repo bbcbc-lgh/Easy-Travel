@@ -1,12 +1,31 @@
 from src.model.schemas import Budget, DayPlan, TripPlanRequest
 
+#: Rough in-city travel allowance per day, by the mode the user picked.
+TRANSPORT_DAILY = {"公共交通": 45, "打车": 120, "自驾": 180}
+DEFAULT_TRANSPORT_DAILY = 70
+
 
 def calculate_budget(days: list[DayPlan], request: TripPlanRequest) -> Budget:
+    """Sum what the plan actually implies.
+
+    Lodging is charged per *night actually spent*: every day except the last one
+    is a night, priced at that day's own hotel. Reading the price off day 1 only
+    (the old behaviour) silently under-reported any plan whose hotel changes
+    mid-trip, which the reviser can produce.
+
+    A night whose hotel is missing falls back to the first priced hotel in the
+    plan rather than counting as free — an unknown price is not a zero price.
+    """
     attractions_total = sum(item.ticket_price for day in days for item in day.attractions)
-    hotel_nights = max(request.days - 1, 0)
-    hotel_cost = (days[0].hotel.estimated_cost if days and days[0].hotel else 0) * hotel_nights
+    priced_hotels = [day.hotel for day in days if day.hotel and day.hotel.estimated_cost]
+    fallback_hotel = priced_hotels[0] if priced_hotels else None
+    hotel_cost = 0
+    for night in days[:-1]:
+        hotel = night.hotel or fallback_hotel
+        if hotel is not None:
+            hotel_cost += hotel.estimated_cost
     meals_total = sum(meal.estimated_cost for day in days for meal in day.meals)
-    transport_unit = {"公共交通": 45, "打车": 120, "自驾": 180}.get(request.transportation, 70)
+    transport_unit = TRANSPORT_DAILY.get(request.transportation, DEFAULT_TRANSPORT_DAILY)
     transportation_total = transport_unit * request.days
     return Budget(
         total_attractions=attractions_total,

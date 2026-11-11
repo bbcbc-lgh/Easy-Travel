@@ -155,6 +155,23 @@ def test_preference_hit_rate_matches_keywords() -> None:
     assert preference_hit_rate(plan, request(preferences="亲子")) == 0.0
 
 
+def test_preference_hit_rate_ignores_model_prose() -> None:
+    """Regression: appending the preference string to a description used to earn 100%.
+
+    The sample data did exactly that, so a plan of unrelated stops scored a perfect
+    preference fit as long as one keyword appeared in the prose. The metric must
+    only look at what the place *is*.
+    """
+    plan = build_plan(days=1, day_attractions=2)
+    for day in plan.days:
+        for index, item in enumerate(day.attractions):
+            item.name = f"杭州地标{index}"
+            item.category = "地标"
+            item.description = "已结合你的偏好：历史文化，带儿童出行，需要无障碍设施。"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 0.0
+
+
 def test_reference_budget_grows_with_tier() -> None:
     economy = reference_budget(request(budget="经济"))
     luxury = reference_budget(request(budget="豪华"))

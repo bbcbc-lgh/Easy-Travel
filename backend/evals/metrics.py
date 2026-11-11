@@ -118,6 +118,16 @@ def hours_known_rate(plan: TripPlan) -> float:
 
 
 def preference_hit_rate(plan: TripPlan, request: TripPlanRequest) -> float:
+    """Share of stops whose *place identity* matches the requested preferences.
+
+    Only ``name`` and ``category`` are inspected. ``description`` is deliberately
+    excluded: it is prose written by the model (or a template), so scoring it
+    measures how well the writer echoes the preference string back — the sample
+    data used to append "已结合你的偏好：{preferences}" to every record, which made
+    every case containing a literal keyword score 100% while "自然风光" (whose
+    keywords never appear in its own label) scored 17%. That is a measurement of
+    the writer, not of the itinerary.
+    """
     attractions = [item for day in plan.days for item in day.attractions]
     if not attractions:
         return 0.0
@@ -134,7 +144,7 @@ def preference_hit_rate(plan: TripPlan, request: TripPlanRequest) -> float:
 
     hits = 0
     for item in attractions:
-        haystack = f"{item.name}{item.category}{item.description}"
+        haystack = f"{item.name}{item.category}"
         if any(keyword and keyword in haystack for keyword in keywords):
             hits += 1
     return hits / len(attractions)
@@ -168,7 +178,10 @@ def composite_score(metrics: CaseMetrics, offline: bool = False) -> float:
         (1.0 if metrics.day_structure_ok else 0.0)
         + metrics.meals_complete_rate
         + (1 - min(metrics.cap_violations / 3, 1.0))
-    ) / 3
+        # A repeated stop is a defect no amount of good geometry excuses, so it
+        # must not be able to score full marks on the constraint axis.
+        + (1.0 if metrics.duplicate_attractions == 0 else 0.0)
+    ) / 4
     preference = metrics.preference_hit_rate
     budget = 1 / (1 + metrics.budget_deviation)
 
