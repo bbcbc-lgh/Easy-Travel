@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from src.config import Settings
 from src.model.schemas import TripPlan, TripPlanRequest
+from src.service.migrations import run_migrations
 
 LEGACY_OWNER = "legacy"
 
@@ -20,36 +21,9 @@ class TripPlanRepository:
         self.init_schema()
 
     def init_schema(self) -> None:
+        """Bring the store up to date; migrations own the schema, not this class."""
         with self._connect() as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS trip_plans (
-                    id TEXT PRIMARY KEY,
-                    owner_id TEXT NOT NULL DEFAULT 'legacy',
-                    city TEXT NOT NULL,
-                    start_date TEXT NOT NULL,
-                    end_date TEXT NOT NULL,
-                    days INTEGER NOT NULL,
-                    request_json TEXT NOT NULL,
-                    plan_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            self._migrate_owner_column(connection)
-            connection.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_trip_plans_owner_created_at
-                ON trip_plans(owner_id, created_at DESC)
-                """
-            )
-
-    @staticmethod
-    def _migrate_owner_column(connection: sqlite3.Connection) -> None:
-        columns = {row["name"] for row in connection.execute("PRAGMA table_info(trip_plans)")}
-        if "owner_id" not in columns:
-            connection.execute(f"ALTER TABLE trip_plans ADD COLUMN owner_id TEXT NOT NULL DEFAULT '{LEGACY_OWNER}'")
+            run_migrations(connection)
 
     def save_plan(self, request: TripPlanRequest, plan: TripPlan, owner_id: str) -> TripPlan:
         plan_id = plan.id or uuid4().hex
