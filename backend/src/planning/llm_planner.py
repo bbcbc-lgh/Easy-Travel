@@ -182,7 +182,7 @@ class LLMPlanner:
         plan = TripPlan(
             city=request.city,
             start_date=request.start_date.isoformat(),
-            end_date=request.end_date.isoformat(),
+            end_date=request.resolved_end_date.isoformat(),
             days=days,
             weather_info=list(candidates.weather),
             overall_suggestions=decision.overall_suggestions

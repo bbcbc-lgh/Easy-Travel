@@ -205,8 +205,9 @@ python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 cd backend
 pip install -r requirements-dev.txt
 ruff check src tests evals          # 后端 lint
+python -m pyright                   # 类型检查（需要 backend/.venv，配置在 pyproject.toml）
 pip-audit -r requirements.txt       # 依赖漏洞扫描（当前 0 条）
-python -m pytest -q                 # 184 个测试，含离线模式
+python -m pytest -q                 # 185 个测试，含离线模式
 python -m evals --mode sample       # 24 条 golden case 的离线评测基线（当前 mean ≈ 72）
 python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
 cd ../frontend
@@ -215,7 +216,7 @@ npm test                            # Vitest 单元测试（9 个）
 npm run build                       # 类型检查 + 打包
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑后端测试、离线评测和前端构建。
+CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑依赖审计、lint、类型检查、后端测试、离线评测和前端构建。
 
 > 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 

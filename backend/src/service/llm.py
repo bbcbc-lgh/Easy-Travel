@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from src.model.llm_profile import ModelProfile
 
@@ -33,7 +34,7 @@ class LLMClient:
             max_retries=0,
         )
 
-    async def complete(self, messages: list[dict[str, str]]) -> LLMCompletion:
+    async def complete(self, messages: list[ChatCompletionMessageParam]) -> LLMCompletion:
         request_kwargs: dict = {}
         if self.profile.max_tokens:
             request_kwargs["max_tokens"] = self.profile.max_tokens

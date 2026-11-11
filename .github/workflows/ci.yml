@@ -27,24 +27,32 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
 
+      # A real venv, because pyproject.toml points pyright at backend/.venv: the
+      # type check has to see the same installed packages the tests do.
+      - name: Create virtualenv
+        run: python -m venv .venv
+
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: .venv/bin/pip install -r requirements-dev.txt
 
       # Pinned versions rot: fastapi 0.116.1 once pinned starlette < 0.48, where
       # no patched release existed. This step is what makes that visible.
       - name: Dependency audit
         run: |
-          pip install pip-audit
-          pip-audit -r requirements.txt
+          .venv/bin/pip install pip-audit
+          .venv/bin/python -m pip_audit -r requirements.txt
 
       - name: Lint
-        run: ruff check src tests evals
+        run: .venv/bin/ruff check src tests evals
+
+      - name: Type check
+        run: .venv/bin/python -m pyright
 
       - name: Run tests
-        run: python -m pytest -q
+        run: .venv/bin/python -m pytest -q
 
       - name: Offline itinerary eval baseline
-        run: python -m evals --mode sample
+        run: .venv/bin/python -m evals --mode sample
 
   frontend:
     name: frontend lint + test + build

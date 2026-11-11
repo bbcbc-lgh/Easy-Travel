@@ -25,6 +25,7 @@ from openai import (
     InternalServerError,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletionMessageParam
 
 from src.config import Settings
 from src.model.llm_profile import ModelProfile
@@ -77,7 +78,7 @@ class LLMGateway:
         if not self.settings.has_llm or not self.profiles:
             raise LLMUnavailableError("llm_disabled")
 
-        base_messages = [
+        base_messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
@@ -201,7 +202,7 @@ class LLMGateway:
         *,
         profile: ModelProfile,
         attempt: int,
-        messages: list[dict[str, str]],
+        messages: list[ChatCompletionMessageParam],
         prompt_version: str,
         reasons: list[str],
     ) -> LLMCompletion | None:
@@ -337,7 +338,7 @@ def _repair_messages(
     user_prompt: str,
     previous_content: str,
     error: str,
-) -> list[dict[str, str]]:
+) -> list[ChatCompletionMessageParam]:
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},

@@ -1,6 +1,6 @@
-import asyncio
+﻿import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from time import perf_counter
 from typing import Any, TypedDict
 
@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 class TripPlanningState(TypedDict, total=False):
+    """The merged graph state.
+
+    ``total=False`` on purpose: every node returns only the keys it produced, and
+    LangGraph merges those into the running state. Reading a key back therefore
+    goes through :func:`_require_request` / :func:`_require_plan`, which say what
+    the graph wiring should have guaranteed.
+    """
+
     request: TripPlanRequest
     attractions: list[Attraction]
     weather_info: list[WeatherInfo]
@@ -34,6 +42,22 @@ class TripPlanningState(TypedDict, total=False):
     revision: int
     critique: list[str]
     on_event: Callable[..., Awaitable[None]] | None
+
+
+def _require_request(state: Mapping[str, Any]) -> TripPlanRequest:
+    """The trip request this run started with. Missing means a broken invocation."""
+    request = state.get("request")
+    if not isinstance(request, TripPlanRequest):
+        raise RuntimeError("state.request is missing: the graph was not entered with a request")
+    return request
+
+
+def _require_plan(state: Mapping[str, Any]) -> TripPlan:
+    """The plan produced by ``create_plan``; every later node depends on it."""
+    plan = state.get("plan")
+    if not isinstance(plan, TripPlan):
+        raise RuntimeError("state.plan is missing: check the graph edges before this node")
+    return plan
 
 
 ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
@@ -85,7 +109,7 @@ class TripPlanningGraph:
 
     async def run(self, request: TripPlanRequest, on_event: ProgressCallback | None = None) -> TripPlan:
         state = await self.graph.ainvoke({"request": request, "revision": 0, "on_event": on_event})
-        return state["plan"]
+        return _require_plan(state)
 
     @staticmethod
     async def _emit(state: TripPlanningState, stage: str, status: str, **fields: Any) -> None:
@@ -98,7 +122,7 @@ class TripPlanningGraph:
             logger.debug("progress callback failed", exc_info=True)
 
     async def _collect_candidates(self, state: TripPlanningState) -> TripPlanningState:
-        request = state["request"]
+        request = _require_request(state)
         started = perf_counter()
         await self._emit(state, "collect_candidates", "start")
         attractions_task = self.attraction_agent.run(request)
@@ -134,7 +158,7 @@ class TripPlanningGraph:
         started = perf_counter()
         await self._emit(state, "create_plan", "start", revision=state.get("revision", 0))
         plan = await self.planner_agent.run(
-            state["request"],
+            _require_request(state),
             state.get("attractions", []),
             state.get("hotels", []),
             state.get("weather_info", []),
@@ -152,8 +176,8 @@ class TripPlanningGraph:
 
     async def _enrich_meals(self, state: TripPlanningState) -> TripPlanningState:
         """Re-pick meals using around-search anchored at the hotel and each day's first stop."""
-        request = state["request"]
-        plan = state["plan"]
+        request = _require_request(state)
+        plan = _require_plan(state)
         base_pool = list(state.get("meals") or [])
         started = perf_counter()
         await self._emit(state, "enrich_meals", "start")
@@ -221,7 +245,7 @@ class TripPlanningGraph:
     async def _enrich_routes(self, state: TripPlanningState) -> TripPlanningState:
         started = perf_counter()
         await self._emit(state, "enrich_routes", "start")
-        plan = await self.amap_service.enrich_daily_routes(state["plan"], state["request"])
+        plan = await self.amap_service.enrich_daily_routes(_require_plan(state), _require_request(state))
         await self._emit(
             state,
             "enrich_routes",
@@ -231,12 +255,12 @@ class TripPlanningGraph:
         return {"plan": plan}
 
     async def _review_plan(self, state: TripPlanningState) -> TripPlanningState:
-        request = state["request"]
+        request = _require_request(state)
         started = perf_counter()
         await self._emit(state, "review_plan", "start")
         plan = self.review_agent.run(
             request,
-            state["plan"],
+            _require_plan(state),
             candidate_count=state.get("candidate_count", 0),
         )
         critique = self.critic.review(request, plan)

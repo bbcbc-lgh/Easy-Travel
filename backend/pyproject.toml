@@ -12,3 +12,19 @@ ignore = ["E501"]
 "tests/*" = ["B011"]
 # FastAPI declares dependencies as default arguments by design.
 "src/api/*" = ["B008"]
+
+[tool.pyright]
+# Application code only. Tests drive their own fakes (e.g. a stand-in LLM client)
+# whose shapes intentionally differ from the SDK's TypedDicts, so type-checking
+# them would produce noise rather than findings.
+include = ["src", "evals"]
+exclude = ["**/__pycache__", ".venv", "data", ".pytest_cache", ".ruff_cache"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+# Third-party packages without stubs are not this project's problem.
+reportMissingTypeStubs = false
+# Resolve installed packages from the project venv (backend/.venv), both locally
+# and in CI, which creates the same path before type-checking.
+venvPath = "."
+venv = ".venv"
+

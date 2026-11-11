@@ -8,7 +8,18 @@ from typing import Any
 import httpx
 
 from src.config import Settings
-from src.model.schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
+from src.model.schemas import (
+    Attraction,
+    DayPlan,
+    Hotel,
+    Location,
+    Meal,
+    PriceSource,
+    RouteLeg,
+    TripPlan,
+    TripPlanRequest,
+    WeatherInfo,
+)
 from src.service.cache import TTLCache
 from src.service.logging import log_event
 from src.service.qweather import QWeatherService
@@ -36,10 +47,11 @@ class AMapService:
             else None
         )
 
-    def _cache_get(self, key: tuple) -> object | None:
+    def _cache_get(self, key: tuple) -> Any:
+        """Heterogeneous cache (POI lists, meals, route legs): values are callers' own types."""
         return self._cache.get(key) if self._cache is not None else None
 
-    def _cache_set(self, key: tuple, value: object) -> None:
+    def _cache_set(self, key: tuple, value: Any) -> None:
         if self._cache is not None:
             self._cache.set(key, value)
 
@@ -47,7 +59,7 @@ class AMapService:
         cache_key = ("attractions", request.city, request.preferences, request.days)
         cached = self._cache_get(cache_key)
         if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+            return [item.model_copy(deep=True) for item in cached]
         result = await self._search_attractions_uncached(request)
         self._cache_set(cache_key, result)
         return result
@@ -120,7 +132,7 @@ class AMapService:
         cache_key = ("hotels", request.city, request.accommodation, request.budget)
         cached = self._cache_get(cache_key)
         if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+            return [item.model_copy(deep=True) for item in cached]
         result = await self._search_hotels_uncached(request)
         self._cache_set(cache_key, result)
         return result
@@ -180,7 +192,7 @@ class AMapService:
         cache_key = ("meals", request.city, request.budget, request.days)
         cached = self._cache_get(cache_key)
         if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+            return [item.model_copy(deep=True) for item in cached]
         result = await self._search_meals_uncached(request)
         self._cache_set(cache_key, result)
         return result
@@ -239,7 +251,7 @@ class AMapService:
         cache_key = ("weather", request.city, request.start_date.isoformat(), request.days)
         cached = self._cache_get(cache_key)
         if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]  # type: ignore[union-attr]
+            return [item.model_copy(deep=True) for item in cached]
         result = await self._query_weather_uncached(request)
         self._cache_set(cache_key, result)
         return result
@@ -272,7 +284,7 @@ class AMapService:
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_direction_10m_dominant",
             "timezone": "Asia/Shanghai",
             "start_date": request.start_date.isoformat(),
-            "end_date": request.end_date.isoformat(),
+            "end_date": request.resolved_end_date.isoformat(),
         }
         try:
             async with httpx.AsyncClient(timeout=5) as client:
@@ -304,7 +316,7 @@ class AMapService:
         directions = ("\u5317", "\u4e1c\u5317", "\u4e1c", "\u4e1c\u5357", "\u5357", "\u897f\u5357", "\u897f", "\u897f\u5317")
         return [
             WeatherInfo(
-                date=str(dates[index]), day_weather=weather_map.get(self._to_int(codes[index]), "\u5929\u6c14\u5f85\u5b9a"), night_weather=weather_map.get(self._to_int(codes[index]), "\u5929\u6c14\u5f85\u5b9a"),
+                date=str(dates[index]), day_weather=self._weather_text(weather_map, codes[index]), night_weather=self._weather_text(weather_map, codes[index]),
                 day_temp=round(float(high[index])), night_temp=round(float(low[index])), wind_direction=directions[round((self._to_int(direction[index]) or 0) / 45) % 8], wind_power=f"{round(float(speed[index]))} km/h",
                 notice="\u5929\u6c14\u7531 Open-Meteo \u9884\u62a5\u670d\u52a1\u63d0\u4f9b\u3002", source="open_meteo",
             )
@@ -312,7 +324,7 @@ class AMapService:
         ]
 
     async def enrich_daily_routes(self, plan: TripPlan, request: TripPlanRequest) -> TripPlan:
-        route_tasks: list[tuple[object, list[asyncio.Task[RouteLeg]]]] = []
+        route_tasks: list[tuple[DayPlan, list[asyncio.Task[RouteLeg]]]] = []
         for day in plan.days:
             route_points: list[tuple[str, Location]] = []
             if day.hotel and day.hotel.location:
@@ -361,7 +373,7 @@ class AMapService:
         )
         cached = self._cache_get(cache_key)
         if cached is not None:
-            return RouteLeg.model_validate(cached)  # type: ignore[arg-type]
+            return RouteLeg.model_validate(cached)
         leg = await self._estimate_route_uncached(origin_name, origin, destination_name, destination, request)
         self._cache_set(cache_key, leg.model_dump())
         return leg
@@ -862,14 +874,23 @@ class AMapService:
 
     @staticmethod
     def _parse_rating(value: object) -> float | None:
+        if not isinstance(value, (int, float, str)):
+            return None
         try:
             rating = float(value)
-            return rating if 0 <= rating <= 5 else None
         except (TypeError, ValueError):
             return None
+        return rating if 0 <= rating <= 5 else None
+
+    def _weather_text(self, weather_map: dict[int, str], value: object) -> str:
+        """Map an Open-Meteo weather code to Chinese; an unknown code stays unknown."""
+        code = self._to_int(value)
+        if code is None:
+            return "\u5929\u6c14\u5f85\u5b9a"
+        return weather_map.get(code, "\u5929\u6c14\u5f85\u5b9a")
 
     @staticmethod
-    def _ticket_price(category: str) -> tuple[int, str]:
+    def _ticket_price(category: str) -> tuple[int, PriceSource]:
         """Return (price, price_source). Never invent a price we cannot justify."""
         if not category or category == "景点":
             return 0, "unknown"
@@ -906,14 +927,14 @@ class AMapService:
         return cost_map.get(budget, 85)
 
     @staticmethod
-    def _hotel_cost(budget: str, accommodation: str, poi: dict[str, Any]) -> tuple[int, str]:
+    def _hotel_cost(budget: str, accommodation: str, poi: dict[str, Any]) -> tuple[int, PriceSource]:
         business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
         if business_cost:
             return business_cost, "api"
         return AMapService._estimate_hotel_cost(budget, accommodation, {}), "estimated"
 
     @staticmethod
-    def _meal_cost(budget: str, poi: dict[str, Any]) -> tuple[int, str]:
+    def _meal_cost(budget: str, poi: dict[str, Any]) -> tuple[int, PriceSource]:
         business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
         if business_cost:
             return business_cost, "api"

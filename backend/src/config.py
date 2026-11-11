@@ -14,8 +14,8 @@ ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 class Settings(BaseSettings):
     app_name: str = "EasyTravel"
     app_env: str = "development"
-    api_host: str = Field("127.0.0.1", validation_alias="FASTAPI_API_HOST")
-    api_port: int = Field(8000, validation_alias="FASTAPI_API_PORT")
+    api_host: str = Field(default="127.0.0.1", validation_alias="FASTAPI_API_HOST")
+    api_port: int = Field(default=8000, validation_alias="FASTAPI_API_PORT")
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     llm_api_key: str = ""
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     llm_total_budget_seconds: float = 150.0
     llm_profiles: list[ModelProfile] = Field(default_factory=list)
 
-    amap_web_service_key: str = Field("", validation_alias="AMAP_WEB_KEY")
+    amap_web_service_key: str = Field(default="", validation_alias="AMAP_WEB_KEY")
     use_sample_data: bool = False
 
     qweather_api_key: str = ""

@@ -125,10 +125,13 @@ def _utf8_stdout():
     """Windows consoles default to a legacy codec; force UTF-8 so Chinese survives."""
     stream = sys.stdout
     encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-    if "utf8" in encoding or not hasattr(stream, "reconfigure"):
+    # ``reconfigure`` is not part of the ``TextIO`` protocol, so fetch it through
+    # getattr: a redirected or replaced stdout may not provide it at all.
+    reconfigure = getattr(stream, "reconfigure", None)
+    if "utf8" in encoding or reconfigure is None:
         return stream
     try:
-        stream.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure(encoding="utf-8", errors="replace")
     except (OSError, ValueError):
         return stream
     return stream
