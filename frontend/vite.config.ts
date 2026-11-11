@@ -18,6 +18,18 @@ export default defineConfig({
       }
     }
   },
+  // e2e runs against `vite preview`, not the dev server: the dev server
+  // optimises dependencies lazily and force-reloads the page when it discovers a
+  // new one, which detaches elements mid-test. Preview serves the real build.
+  preview: {
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
+  },
   build: {
     // Long-lived vendor chunks keep the app chunk small and cacheable.
     // Rolldown (Vite 8) only accepts the function form of manualChunks.
