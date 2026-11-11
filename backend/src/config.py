@@ -45,7 +45,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "text"
 
-    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+        # Fields with a validation_alias (AMAP_WEB_KEY, FASTAPI_API_HOST, ...)
+        # must also accept their field name, otherwise `Settings(amap_web_service_key=...)`
+        # is silently ignored and tests only pass when a local .env exists.
+        populate_by_name=True,
+    )
 
     @computed_field
     @property
