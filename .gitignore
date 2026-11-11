@@ -20,6 +20,12 @@ frontend/test-results/
 # Local working notes (not for version control)
 outputs/
 
+# Coverage output
+.coverage
+backend/.coverage
+backend/htmlcov/
+frontend/coverage/
+
 # Editor and OS
 .idea/
 .vscode/

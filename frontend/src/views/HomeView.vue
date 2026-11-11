@@ -29,14 +29,36 @@
               </div>
             </div>
             <div class="form-grid">
-              <a-form-item label="目的地" name="city" :rules="[{ required: true, message: '请输入目的地城市' }]">
+              <a-form-item
+                label="目的地"
+                name="city"
+                :rules="[{ required: true, message: '请输入目的地城市' }]"
+              >
                 <a-input v-model:value="formData.city" placeholder="如：北京" />
               </a-form-item>
-              <a-form-item label="出发日期" name="start_date" :rules="[{ required: true, message: '请选择出发日期' }]">
-                <a-input v-model:value="formData.start_date" type="date" placeholder="选择出发日期" />
+              <a-form-item
+                label="出发日期"
+                name="start_date"
+                :rules="[{ required: true, message: '请选择出发日期' }]"
+              >
+                <a-input
+                  v-model:value="formData.start_date"
+                  type="date"
+                  placeholder="选择出发日期"
+                />
               </a-form-item>
-              <a-form-item label="计划天数" name="days" :rules="[{ required: true, message: '请输入计划天数' }]">
-                <a-input-number v-model:value="formData.days" :min="1" :max="14" placeholder="如：3" class="full-width" />
+              <a-form-item
+                label="计划天数"
+                name="days"
+                :rules="[{ required: true, message: '请输入计划天数' }]"
+              >
+                <a-input-number
+                  v-model:value="formData.days"
+                  :min="1"
+                  :max="14"
+                  placeholder="如：3"
+                  class="full-width"
+                />
               </a-form-item>
             </div>
           </div>
@@ -50,14 +72,34 @@
               </div>
             </div>
             <div class="form-grid">
-              <a-form-item label="预算范围" name="budget" :rules="[{ required: true, message: '请选择预算范围' }]">
+              <a-form-item
+                label="预算范围"
+                name="budget"
+                :rules="[{ required: true, message: '请选择预算范围' }]"
+              >
                 <a-segmented v-model:value="formData.budget" :options="budgetOptions" block />
               </a-form-item>
-              <a-form-item label="市内出行" name="transportation" :rules="[{ required: true, message: '请选择市内出行方式' }]">
-                <a-select v-model:value="formData.transportation" :options="transportOptions" placeholder="如：公共交通" />
+              <a-form-item
+                label="市内出行"
+                name="transportation"
+                :rules="[{ required: true, message: '请选择市内出行方式' }]"
+              >
+                <a-select
+                  v-model:value="formData.transportation"
+                  :options="transportOptions"
+                  placeholder="如：公共交通"
+                />
               </a-form-item>
-              <a-form-item label="住宿标准" name="accommodation" :rules="[{ required: true, message: '请选择住宿标准' }]">
-                <a-select v-model:value="formData.accommodation" :options="hotelOptions" placeholder="如：经济型酒店" />
+              <a-form-item
+                label="住宿标准"
+                name="accommodation"
+                :rules="[{ required: true, message: '请选择住宿标准' }]"
+              >
+                <a-select
+                  v-model:value="formData.accommodation"
+                  :options="hotelOptions"
+                  placeholder="如：经济型酒店"
+                />
               </a-form-item>
             </div>
           </div>
@@ -91,15 +133,21 @@
               <span class="loading-elapsed">已用时 {{ elapsedSeconds }} 秒</span>
             </div>
             <ul class="stage-list">
-              <li v-for="stage in stageOrder" :key="stage.key" :class="['stage-item', stageState(stage.key)]">
+              <li
+                v-for="stage in stageOrder"
+                :key="stage.key"
+                :class="['stage-item', stageState(stage.key)]"
+              >
                 <span class="stage-indicator" aria-hidden="true" />
                 <span class="stage-label">{{ stage.label }}</span>
                 <small v-if="stageDurations[stage.key] !== undefined">
-                  {{ (stageDurations[stage.key] / 1000).toFixed(1) }} 秒
+                  {{ ((stageDurations[stage.key] ?? 0) / 1000).toFixed(1) }} 秒
                 </small>
               </li>
             </ul>
-            <p class="loading-hint">模型正在规划行程，通常需要 30–70 秒。等待期间可以取消，不必关闭页面。</p>
+            <p class="loading-hint">
+              模型正在规划行程，通常需要 30–70 秒。等待期间可以取消，不必关闭页面。
+            </p>
             <p v-if="stalled" class="loading-hint loading-stalled">
               已有 15 秒没收到服务端进度，可能仍卡在模型响应上；可以再等一会儿，或取消后重试。
             </p>
@@ -183,7 +231,10 @@ const extraRequirements = ref('')
 const preferenceOptions = ['历史文化', '自然风光', '美食', '购物', '艺术', '休闲', '亲子', '摄影']
 const budgetOptions = ['经济', '中等', '舒适', '豪华']
 const transportOptions = ['公共交通', '打车', '自驾'].map((value) => ({ label: value, value }))
-const hotelOptions = ['青年旅舍', '经济型酒店', '舒适型酒店', '高端酒店'].map((value) => ({ label: value, value }))
+const hotelOptions = ['青年旅舍', '经济型酒店', '舒适型酒店', '高端酒店'].map((value) => ({
+  label: value,
+  value
+}))
 
 function resetForm() {
   Object.assign(formData, defaultForm())
@@ -281,7 +332,9 @@ async function handleSubmit() {
         onPlan: (plan: TripPlan) => {
           finished = true
           sessionStorage.setItem('tripPlan', JSON.stringify(plan))
-          void router.push(plan.id ? { name: 'plan-detail', params: { id: plan.id } } : { name: 'result' })
+          void router.push(
+            plan.id ? { name: 'plan-detail', params: { id: plan.id } } : { name: 'result' }
+          )
         },
         onError: (detail: string) => {
           failure = detail

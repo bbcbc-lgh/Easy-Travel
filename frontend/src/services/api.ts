@@ -66,7 +66,7 @@ export async function updateTripPlan(id: string, payload: TripPlan): Promise<Tri
 export interface ReviseResult {
   plan: TripPlan
   reply: string
-}/** Conversational edit: the backend turns the instruction into an applied patch. */
+} /** Conversational edit: the backend turns the instruction into an applied patch. */
 export async function reviseTripPlan(id: string, instruction: string): Promise<ReviseResult> {
   try {
     const response = await api.post<ReviseResult>(

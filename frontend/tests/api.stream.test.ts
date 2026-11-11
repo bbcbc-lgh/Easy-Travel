@@ -35,13 +35,15 @@ describe('streamTripPlan', () => {
     const { streamTripPlan } = await loadApi()
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        sseResponse([
-          'event: stage\ndata: {"stage":"create_plan","status":"start"}\n\n',
-          'event: heartbeat\ndata: {"elapsed_ms":5000}\n\n',
-          'event: plan\ndata: {"plan":{"id":"p1","city":"杭州"}}\n\n'
-        ])
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          sseResponse([
+            'event: stage\ndata: {"stage":"create_plan","status":"start"}\n\n',
+            'event: heartbeat\ndata: {"elapsed_ms":5000}\n\n',
+            'event: plan\ndata: {"plan":{"id":"p1","city":"杭州"}}\n\n'
+          ])
+        )
     )
 
     const stages: string[] = []
@@ -68,13 +70,15 @@ describe('streamTripPlan', () => {
     const { streamTripPlan } = await loadApi()
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        sseResponse([
-          'event: stage\ndata: {not json}\n\n',
-          'event: stage\ndata: {"stage":"review_plan","status":"done"}\n\n',
-          'event: plan\ndata: {"plan":{"id":"p2","city":"成都"}}\n\n'
-        ])
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          sseResponse([
+            'event: stage\ndata: {not json}\n\n',
+            'event: stage\ndata: {"stage":"review_plan","status":"done"}\n\n',
+            'event: plan\ndata: {"plan":{"id":"p2","city":"成都"}}\n\n'
+          ])
+        )
     )
 
     const stages: string[] = []
