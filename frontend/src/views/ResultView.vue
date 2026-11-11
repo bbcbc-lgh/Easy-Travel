@@ -44,11 +44,11 @@
             <template #icon><Pencil :size="17" /></template>
             {{ editMode ? '退出编辑' : '编辑行程' }}
           </a-button>
-          <a-button v-if="editMode" type="primary" @click="saveChanges">
+          <a-button v-if="editMode" type="primary" :loading="saving" @click="saveChanges">
             <template #icon><Save :size="17" /></template>
             保存
           </a-button>
-          <a-button v-if="editMode" @click="cancelEdit">
+          <a-button v-if="editMode" :disabled="saving" @click="cancelEdit">
             <template #icon><Undo2 :size="17" /></template>
             取消
           </a-button>
@@ -282,7 +282,7 @@ import {
   WalletCards
 } from 'lucide-vue-next'
 import { Modal, message } from 'ant-design-vue'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { deleteTripPlan, getTripPlan, reviseTripPlan, updateTripPlan } from '../services/api'
@@ -293,6 +293,8 @@ const router = useRouter()
 const route = useRoute()
 const selectedKeys = ref(['overview'])
 const editMode = ref(false)
+const saving = ref(false)
+const exporting = ref<'' | 'image' | 'pdf'>('')
 const originalPlan = ref<TripPlan | null>(null)
 const mapReady = ref(false)
 const mapStatus = ref('正在准备地图')
@@ -300,7 +302,7 @@ const mapStatus = ref('正在准备地图')
 const routePlanId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
-const hotelNights = computed(() => Math.max((tripPlan.value?.days.length || 1) - 1, 1))
+const hotelNights = computed(() => Math.max((tripPlan.value?.days.length || 1) - 1, 0))
 const expandedDayIndices = ref<number[]>([0])
 const qualityWarnings = computed(() => tripPlan.value?.quality?.warnings || [])
 const reviseInstruction = ref('')
@@ -308,6 +310,9 @@ const revising = ref(false)
 const reviseReply = ref('')
 const reviseError = ref('')
 let mapInstance: { destroy: () => void } | null = null
+// Bumped on every init: an older in-flight init must not steal the container
+// from a newer one (both used to pass the "already destroyed?" check).
+let mapInitSeq = 0
 
 function loadInitialPlan(): TripPlan | null {
   const cached = sessionStorage.getItem('tripPlan')
@@ -344,23 +349,30 @@ function toggleEditMode() {
 }
 
 async function saveChanges() {
-  editMode.value = false
-  originalPlan.value = null
-  if (tripPlan.value?.id) {
-    try {
+  if (!tripPlan.value || saving.value) return
+  saving.value = true
+  try {
+    if (tripPlan.value.id) {
       tripPlan.value = await updateTripPlan(tripPlan.value.id, tripPlan.value)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : '请稍后再试'
-      message.error(`保存失败：${detail}`)
-      return
     }
+    // Leave edit mode only after the server accepted the change. Clearing it
+    // first (the old order) meant a failed save discarded the user's snapshot,
+    // hid the save button and left no way to retry or cancel.
+    editMode.value = false
+    originalPlan.value = null
+    persistPlan()
+    void initMap()
+    message.success('修改已保存')
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : '请稍后再试'
+    message.error(`保存失败：${detail}`)
+  } finally {
+    saving.value = false
   }
-  persistPlan()
-  void initMap()
-  message.success('修改已保存')
 }
 
 function cancelEdit() {
+  if (saving.value) return
   if (originalPlan.value) {
     tripPlan.value = originalPlan.value
   }
@@ -494,6 +506,7 @@ async function loadPlanFromRoute() {
 }
 
 async function initMap() {
+  const seq = ++mapInitSeq
   mapReady.value = false
   mapStatus.value = '正在准备地图'
   const key = import.meta.env.VITE_AMAP_JS_KEY
@@ -508,10 +521,14 @@ async function initMap() {
 
   try {
     await nextTick()
-    mapInstance?.destroy()
-    mapInstance = null
     const first = allAttractions.value[0]
     const AMap = await AMapLoader.load({ key, version: '2.0' })
+    // A newer init (after a save/revise/unmount) started while we awaited the
+    // loader; drop this one instead of leaving two maps on the page.
+    if (seq !== mapInitSeq) return
+
+    mapInstance?.destroy()
+    mapInstance = null
     const map = new AMap.Map('amap-container', {
       zoom: 12,
       center: [first.location.longitude, first.location.latitude]
@@ -540,6 +557,14 @@ async function capturePlanContent() {
   expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
   await nextTick()
   try {
+    // Day cards use loading="lazy": sections revealed just now are often not
+    // decoded yet, and html2canvas would capture them as blank boxes.
+    const images = Array.from(element.querySelectorAll('img'))
+    await Promise.all(
+      images.map((image) =>
+        image.complete ? Promise.resolve() : image.decode().catch(() => undefined)
+      )
+    )
     return await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
   } finally {
     expandedDayIndices.value = visibleDays
@@ -547,56 +572,77 @@ async function capturePlanContent() {
 }
 
 async function exportAsImage() {
-  if (!tripPlan.value) return
-  const canvas = await capturePlanContent()
-  if (!canvas) return
-  const link = document.createElement('a')
-  link.download = `${tripPlan.value.city}旅行计划.png`
-  link.href = canvas.toDataURL('image/png')
-  link.click()
+  if (!tripPlan.value || exporting.value) return
+  exporting.value = 'image'
+  try {
+    const canvas = await capturePlanContent()
+    if (!canvas) return
+    const link = document.createElement('a')
+    link.download = `${tripPlan.value.city}旅行计划.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  } catch (error) {
+    message.error(`导出图片失败：${error instanceof Error ? error.message : '请稍后再试'}`)
+  } finally {
+    exporting.value = ''
+  }
 }
 
 async function exportAsPDF() {
-  if (!tripPlan.value) return
-  const canvas = await capturePlanContent()
-  if (!canvas) return
-  const { default: jsPDF } = await import('jspdf')
-  const pdf = new jsPDF('p', 'mm', 'a4')
-  const margin = 8
-  const contentWidth = 210 - margin * 2
-  const scale = contentWidth / canvas.width
-  const slices = paginateCanvas(canvas.width, canvas.height)
+  if (!tripPlan.value || exporting.value) return
+  exporting.value = 'pdf'
+  try {
+    const canvas = await capturePlanContent()
+    if (!canvas) return
+    const { default: jsPDF } = await import('jspdf')
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const margin = 8
+    const contentWidth = 210 - margin * 2
+    const scale = contentWidth / canvas.width
+    const slices = paginateCanvas(canvas.width, canvas.height)
 
-  slices.forEach((slice, index) => {
-    const pageCanvas = document.createElement('canvas')
-    pageCanvas.width = canvas.width
-    pageCanvas.height = slice.height
-    const context = pageCanvas.getContext('2d')
-    if (!context) return
-    context.drawImage(
-      canvas,
-      0,
-      slice.offsetY,
-      canvas.width,
-      slice.height,
-      0,
-      0,
-      canvas.width,
-      slice.height
-    )
-    if (index > 0) pdf.addPage()
-    pdf.addImage(
-      pageCanvas.toDataURL('image/png'),
-      'PNG',
-      margin,
-      margin,
-      contentWidth,
-      slice.height * scale
-    )
-  })
+    slices.forEach((slice, index) => {
+      const pageCanvas = document.createElement('canvas')
+      pageCanvas.width = canvas.width
+      pageCanvas.height = slice.height
+      const context = pageCanvas.getContext('2d')
+      if (!context) return
+      context.drawImage(
+        canvas,
+        0,
+        slice.offsetY,
+        canvas.width,
+        slice.height,
+        0,
+        0,
+        canvas.width,
+        slice.height
+      )
+      if (index > 0) pdf.addPage()
+      pdf.addImage(
+        pageCanvas.toDataURL('image/png'),
+        'PNG',
+        margin,
+        margin,
+        contentWidth,
+        slice.height * scale
+      )
+    })
 
-  pdf.save(`${tripPlan.value.city}旅行计划.pdf`)
+    pdf.save(`${tripPlan.value.city}旅行计划.pdf`)
+  } catch (error) {
+    message.error(`导出 PDF 失败：${error instanceof Error ? error.message : '请稍后再试'}`)
+  } finally {
+    exporting.value = ''
+  }
 }
+
+onBeforeUnmount(() => {
+  // Invalidates any in-flight init and releases the map's listeners and DOM.
+  mapInitSeq += 1
+  mapInstance?.destroy()
+  mapInstance = null
+})
 
 onMounted(async () => {
   await loadPlanFromRoute()

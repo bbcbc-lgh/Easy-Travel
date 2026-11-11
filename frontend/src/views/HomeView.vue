@@ -99,7 +99,13 @@
                 </small>
               </li>
             </ul>
-            <p class="loading-hint">模型正在规划行程，通常需要 30–70 秒，请不要关闭页面。</p>
+            <p class="loading-hint">模型正在规划行程，通常需要 30–70 秒。等待期间可以取消，不必关闭页面。</p>
+            <p v-if="stalled" class="loading-hint loading-stalled">
+              已有 15 秒没收到服务端进度，可能仍卡在模型响应上；可以再等一会儿，或取消后重试。
+            </p>
+            <a-button size="small" danger :disabled="cancelling" @click="cancelGeneration">
+              {{ cancelling ? '正在取消…' : '取消生成' }}
+            </a-button>
           </div>
 
           <div class="actions-row">
@@ -136,19 +142,26 @@ const llmReady = ref<boolean | null>(null)
 const stageOrder = [
   { key: 'collect_candidates', label: '收集候选地点' },
   { key: 'create_plan', label: '规划行程' },
+  { key: 'enrich_meals', label: '就近挑选餐饮' },
   { key: 'enrich_routes', label: '计算路线' },
   { key: 'review_plan', label: '质量检查' }
 ] as const
 
 const stageStatus = ref<Record<string, 'pending' | 'active' | 'done'>>({})
 const stageDurations = ref<Record<string, number>>({})
+const stalled = ref(false)
+const cancelling = ref(false)
 
 const currentStageLabel = computed(() => {
   const active = stageOrder.find((stage) => stageStatus.value[stage.key] === 'active')
   return active ? `正在${active.label}` : '正在准备'
 })
 
+const STALL_AFTER_MS = 15_000
+
 let elapsedTimer: number | undefined
+let abortController: AbortController | null = null
+let lastProgressAt = 0
 
 type TripPlanForm = Omit<TripPlanRequest, 'budget' | 'days' | 'preferences'> & {
   budget?: TripPlanRequest['budget']
@@ -192,6 +205,8 @@ function stageState(key: string) {
 }
 
 function markStage(event: PlanStageEvent) {
+  lastProgressAt = Date.now()
+  stalled.value = false
   stageStatus.value = {
     ...stageStatus.value,
     [event.stage]: event.status === 'done' ? 'done' : 'active'
@@ -208,20 +223,38 @@ function stopTimer() {
   }
 }
 
+function cancelGeneration() {
+  if (!abortController) return
+  cancelling.value = true
+  abortController.abort()
+}
+
 async function handleSubmit() {
+  // Guard re-entry: the submit button is disabled while loading, but pressing
+  // Enter in a field fires @finish again and would start a second paid run.
+  if (loading.value) return
+
   const { budget, days, transportation, accommodation } = formData
   if (!budget || !days || !transportation || !accommodation) {
     return
   }
 
   loading.value = true
+  cancelling.value = false
+  stalled.value = false
   stageStatus.value = {}
   stageDurations.value = {}
   elapsedSeconds.value = 0
   const startedAt = Date.now()
+  lastProgressAt = startedAt
+  stopTimer()
   elapsedTimer = window.setInterval(() => {
     elapsedSeconds.value = Math.floor((Date.now() - startedAt) / 1000)
+    stalled.value = loading.value && Date.now() - lastProgressAt > STALL_AFTER_MS
   }, 1000)
+
+  const controller = new AbortController()
+  abortController = controller
 
   let failure: string | null = null
   let finished = false
@@ -239,6 +272,12 @@ async function handleSubmit() {
       },
       {
         onStage: markStage,
+        // The server sends a heartbeat every 5s while it waits; without using it
+        // the UI cannot tell "still working" from "connection died".
+        onHeartbeat: () => {
+          lastProgressAt = Date.now()
+          stalled.value = false
+        },
         onPlan: (plan: TripPlan) => {
           finished = true
           sessionStorage.setItem('tripPlan', JSON.stringify(plan))
@@ -246,24 +285,37 @@ async function handleSubmit() {
         },
         onError: (detail: string) => {
           failure = detail
+        },
+        onAborted: () => {
+          failure = null
         }
-      }
+      },
+      controller.signal
     )
   } catch (error) {
     failure = error instanceof Error ? error.message : '请检查后端服务或 API 配置'
   } finally {
     stopTimer()
+    if (abortController === controller) abortController = null
     loading.value = false
+    cancelling.value = false
+    stalled.value = false
   }
 
   if (failure) {
     message.error(`生成计划失败：${failure}`)
-  } else if (!finished) {
+  } else if (!finished && !controller.signal.aborted) {
     message.error('生成未完成，请重试')
+  } else if (controller.signal.aborted) {
+    message.info('已取消生成')
   }
 }
 
-onBeforeUnmount(stopTimer)
+onBeforeUnmount(() => {
+  stopTimer()
+  abortController?.abort()
+  abortController = null
+})
 
 onMounted(async () => {
   try {

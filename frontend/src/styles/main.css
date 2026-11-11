@@ -369,6 +369,17 @@ select:focus-visible,
   color: var(--muted, #7a7166);
 }
 
+.loading-stalled {
+  color: #9a5b23;
+}
+
+/* The cancel button sits under the progress list, aligned left with it.
+   .loading-box is a grid, so it aligns on the block axis, not flex-start. */
+.loading-box > .ant-btn {
+  justify-self: start;
+  margin-top: 10px;
+}
+
 @keyframes stage-pulse {
   0%, 100% { box-shadow: 0 0 0 3px rgba(196, 92, 56, 0.14); }
   50% { box-shadow: 0 0 0 6px rgba(196, 92, 56, 0.08); }
