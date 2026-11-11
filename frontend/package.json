@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc -b && vite build",
+    "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -21,8 +23,15 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-vue": "^10.12.1",
+    "globals": "^17.14.0",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^7.0.0",
+    "vitest": "^5.1.0",
+    "vue-eslint-parser": "^10.4.2",
     "vue-tsc": "^2.2.10"
   }
 }

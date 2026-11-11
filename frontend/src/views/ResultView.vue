@@ -287,6 +287,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { deleteTripPlan, getTripPlan, reviseTripPlan, updateTripPlan } from '../services/api'
 import type { Attraction, PriceSource, TripPlan } from '../types/trip'
+import { paginateCanvas } from '../utils/pdf'
 
 const router = useRouter()
 const route = useRoute()
@@ -525,7 +526,7 @@ async function initMap() {
       map.add(marker)
     })
     mapReady.value = true
-  } catch (error) {
+  } catch {
     mapStatus.value = '地图加载失败，请检查高德 JS Key'
   }
 }
@@ -561,10 +562,39 @@ async function exportAsPDF() {
   if (!canvas) return
   const { default: jsPDF } = await import('jspdf')
   const pdf = new jsPDF('p', 'mm', 'a4')
-  const imgData = canvas.toDataURL('image/png')
-  const imgWidth = 210
-  const imgHeight = (canvas.height * imgWidth) / canvas.width
-  pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+  const margin = 8
+  const contentWidth = 210 - margin * 2
+  const scale = contentWidth / canvas.width
+  const slices = paginateCanvas(canvas.width, canvas.height)
+
+  slices.forEach((slice, index) => {
+    const pageCanvas = document.createElement('canvas')
+    pageCanvas.width = canvas.width
+    pageCanvas.height = slice.height
+    const context = pageCanvas.getContext('2d')
+    if (!context) return
+    context.drawImage(
+      canvas,
+      0,
+      slice.offsetY,
+      canvas.width,
+      slice.height,
+      0,
+      0,
+      canvas.width,
+      slice.height
+    )
+    if (index > 0) pdf.addPage()
+    pdf.addImage(
+      pageCanvas.toDataURL('image/png'),
+      'PNG',
+      margin,
+      margin,
+      contentWidth,
+      slice.height * scale
+    )
+  })
+
   pdf.save(`${tripPlan.value.city}旅行计划.pdf`)
 }
 
