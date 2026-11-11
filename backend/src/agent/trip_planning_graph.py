@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from time import perf_counter
@@ -216,16 +216,10 @@ class TripPlanningGraph:
             breakfast_pool = await self.meal_agent.run_around(request, hotel.location, radius=1200, limit=8)
 
         untouched = [day for day in plan.days if day not in targets]
-        used_keys: set[str] = {
-            "".join(meal.name.split()).lower() for day in untouched for meal in day.meals
-        }
+        used_keys: set[str] = {"".join(meal.name.split()).lower() for day in untouched for meal in day.meals}
         picked_days = 0
         for day in targets:
-            anchor = (
-                day.attractions[0].location
-                if day.attractions
-                else (day.hotel.location if day.hotel else None)
-            )
+            anchor = day.attractions[0].location if day.attractions else (day.hotel.location if day.hotel else None)
             around: list[Meal] = []
             if anchor is not None:
                 around = await self.meal_agent.run_around(request, anchor, radius=2500, limit=10)

@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 
 from src.model.schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
 from src.planning.contracts import CandidatePlaces

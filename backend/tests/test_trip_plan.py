@@ -169,11 +169,7 @@ def test_five_day_plan_does_not_repeat_attractions() -> None:
     )
     assert response.status_code == 200
     payload = response.json()
-    names = [
-        attraction["name"]
-        for day in payload["days"]
-        for attraction in day["attractions"]
-    ]
+    names = [attraction["name"] for day in payload["days"] for attraction in day["attractions"]]
     assert len(names) == len(set(names))
     assert payload["quality"]["checks"]["no_duplicate_attractions"] is True
 
@@ -232,12 +228,7 @@ def test_review_agent_removes_duplicate_attractions() -> None:
 
 def test_amap_attraction_filter_rejects_restaurants() -> None:
     assert AMapService._is_attraction_poi({"type": "风景名胜;公园广场;公园"}) is True
-    assert (
-        AMapService._is_attraction_poi(
-            {"type": "风景名胜;风景名胜相关;旅游景点|餐饮服务;中餐厅;特色餐厅"}
-        )
-        is False
-    )
+    assert AMapService._is_attraction_poi({"type": "风景名胜;风景名胜相关;旅游景点|餐饮服务;中餐厅;特色餐厅"}) is False
     assert AMapService._looks_like_non_attraction_name("四季椰林椰子鸡(卓悦中心店)") is True
     assert AMapService._is_attraction_poi({"type": "科教文化服务;学校;职业技术学校"}) is False
     assert AMapService._is_attraction_poi({"type": "科教文化服务;培训机构;培训机构"}) is False

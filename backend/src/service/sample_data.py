@@ -70,7 +70,10 @@ def sample_hotels(city: str, accommodation: str, budget: str) -> list[Hotel]:
         "\u8212\u9002\u578b\u9152\u5e97": 520,
         "\u9ad8\u7aef\u9152\u5e97": 980,
     }
-    nightly = accommodation_prices.get(accommodation, {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460))
+    nightly = accommodation_prices.get(
+        accommodation,
+        {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460),
+    )
     return [
         Hotel(
             name=f"{city}{accommodation}演示住宿",
@@ -101,9 +104,30 @@ def sample_meals(city: str, budget: str) -> list[Meal]:
     cost_map = {"经济": (20, 45, 55), "中等": (35, 75, 90), "舒适": (55, 120, 160), "豪华": (90, 220, 320)}
     breakfast, lunch, dinner = cost_map.get(budget, (35, 75, 90))
     return [
-        Meal(type="breakfast", name=f"{city}早餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请在酒店周边选择评分较高、营业中的早餐店。", estimated_cost=breakfast, source="sample"),
-        Meal(type="lunch", name=f"{city}午餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请在上午景点附近按实时营业状态选择餐厅。", estimated_cost=lunch, source="sample"),
-        Meal(type="dinner", name=f"{city}晚餐演示建议", address="离线演示数据，暂无具体店名和地址", description="请结合返程路线和实时评分选择晚餐。", estimated_cost=dinner, source="sample"),
+        Meal(
+            type="breakfast",
+            name=f"{city}早餐演示建议",
+            address="离线演示数据，暂无具体店名和地址",
+            description="请在酒店周边选择评分较高、营业中的早餐店。",
+            estimated_cost=breakfast,
+            source="sample",
+        ),
+        Meal(
+            type="lunch",
+            name=f"{city}午餐演示建议",
+            address="离线演示数据，暂无具体店名和地址",
+            description="请在上午景点附近按实时营业状态选择餐厅。",
+            estimated_cost=lunch,
+            source="sample",
+        ),
+        Meal(
+            type="dinner",
+            name=f"{city}晚餐演示建议",
+            address="离线演示数据，暂无具体店名和地址",
+            description="请结合返程路线和实时评分选择晚餐。",
+            estimated_cost=dinner,
+            source="sample",
+        ),
     ]
 
 

@@ -37,11 +37,7 @@ def day_load(day: DayPlan) -> float:
 
 def overloaded_days(plan) -> list[tuple[int, float]]:
     """(day_index, load) for days that exceed the budget."""
-    return [
-        (day.day_index, load)
-        for day in plan.days
-        if (load := day_load(day)) > DAILY_LOAD_LIMIT
-    ]
+    return [(day.day_index, load) for day in plan.days if (load := day_load(day)) > DAILY_LOAD_LIMIT]
 
 
 def describe_load(day: DayPlan) -> str:

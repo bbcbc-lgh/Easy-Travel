@@ -203,9 +203,7 @@ def test_schema_failure_triggers_one_repair_round() -> None:
     client = FakeClient([completion('{"wat": 1}'), completion('{"city": "杭州"}')])
     inject(gateway, "primary-model", client)
 
-    result = asyncio.run(
-        gateway.generate_json("system", "user", prompt_version="p", validate=_validate_city)
-    )
+    result = asyncio.run(gateway.generate_json("system", "user", prompt_version="p", validate=_validate_city))
 
     assert result.value == {"city": "杭州"}
     assert result.repaired is True
@@ -234,12 +232,11 @@ def test_valid_payload_skips_repair() -> None:
     client = FakeClient([completion('{"city": "杭州"}')])
     inject(gateway, "primary-model", client)
 
-    result = asyncio.run(
-        gateway.generate_json("system", "user", prompt_version="p", validate=_validate_city)
-    )
+    result = asyncio.run(gateway.generate_json("system", "user", prompt_version="p", validate=_validate_city))
 
     assert result.repaired is False
     assert len(client.calls) == 1
+
 
 def test_flat_settings_carry_reasoning_effort() -> None:
     profile = Settings(llm_reasoning_effort="minimal").model_profiles[0]

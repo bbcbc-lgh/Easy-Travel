@@ -38,7 +38,9 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
         f"- 用例数：{stats.get('count', 0)}（失败 {stats.get('errors', 0)}）",
     ]
     if offline:
-        lines.append("- 模式说明：离线运行，全部行程由确定性规则引擎生成；综合分不含「是否使用模型」项（权重已归一化）。")
+        lines.append(
+            "- 模式说明：离线运行，全部行程由确定性规则引擎生成；综合分不含「是否使用模型」项（权重已归一化）。"
+        )
     lines += [
         "",
         "## 汇总",
@@ -47,7 +49,9 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
         "| --- | --- | --- |",
     ]
     if stats.get("count"):
-        weight_note = "动线 34%、约束 28%、偏好 22%、预算 16%" if offline else "动线 30%、约束 25%、偏好 20%、预算 15%、模型 10%"
+        weight_note = (
+            "动线 34%、约束 28%、偏好 22%、预算 16%" if offline else "动线 30%、约束 25%、偏好 20%、预算 15%、模型 10%"
+        )
         lines += [
             f"| 综合得分 | **{stats['score']:.1f}** / 100 | 加权：{weight_note} |",
             f"| 单日折返均值 | {stats['geo']:.1f} km | 同一天景点之间的移动距离（不含酒店往返） |",
@@ -106,8 +110,7 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
             verdict = result.judge or {}
             issues = "；".join(verdict.get("issues") or []) or "无"
             lines.append(
-                f"- **{result.case.id}** {verdict.get('score')}/5 — {verdict.get('rationale') or ''}"
-                f"（问题：{issues}）"
+                f"- **{result.case.id}** {verdict.get('score')}/5 — {verdict.get('rationale') or ''}（问题：{issues}）"
             )
 
     lines.append("")

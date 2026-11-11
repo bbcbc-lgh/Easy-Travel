@@ -89,9 +89,7 @@ def test_cancelled_generation_refunds_its_slot() -> None:
 
 def test_busy_rejection_does_not_consume_quota() -> None:
     """Being turned away because the machine is busy must not spend a daily run."""
-    guard = GenerationGuard(
-        Settings(plan_max_concurrency=1, plan_queue_timeout_seconds=0.05, plan_daily_limit=2)
-    )
+    guard = GenerationGuard(Settings(plan_max_concurrency=1, plan_queue_timeout_seconds=0.05, plan_daily_limit=2))
 
     async def scenario() -> None:
         async with guard.generation_slot("owner-a"):

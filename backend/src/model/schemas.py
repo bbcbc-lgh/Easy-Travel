@@ -76,12 +76,7 @@ class Budget(BaseModel):
 
     @model_validator(mode="after")
     def fill_total(self) -> "Budget":
-        expected = (
-            self.total_attractions
-            + self.total_hotels
-            + self.total_meals
-            + self.total_transportation
-        )
+        expected = self.total_attractions + self.total_hotels + self.total_meals + self.total_transportation
         if self.total == 0:
             self.total = expected
         return self
@@ -159,7 +154,9 @@ class WeatherInfo(BaseModel):
     wind_power: str = Field(..., description="风力")
     forecast_available: bool = Field(default=True, description="是否有可信天气预报")
     notice: str | None = Field(default=None, description="天气提示")
-    source: Literal["amap", "open_meteo", "qweather", "sample", "unavailable"] = Field(default="unavailable", description="weather data source")
+    source: Literal["amap", "open_meteo", "qweather", "sample", "unavailable"] = Field(
+        default="unavailable", description="weather data source"
+    )
 
     @field_validator("day_temp", "night_temp", mode="before")
     @classmethod

@@ -22,8 +22,7 @@ def test_client_cannot_forge_quality_budget_or_ownership(owned_client, plan_payl
     assert body["budget"]["total"] != 1
     assert body["days"][0]["date"] != "1999-01-01"
     assert body["budget"]["total"] == sum(
-        body["budget"][key]
-        for key in ("total_attractions", "total_hotels", "total_meals", "total_transportation")
+        body["budget"][key] for key in ("total_attractions", "total_hotels", "total_meals", "total_transportation")
     )
 
 

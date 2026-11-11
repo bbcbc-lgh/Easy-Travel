@@ -21,9 +21,7 @@ def apply_edits(existing: TripPlan, incoming: TripPlan, request: TripPlanRequest
     if len(incoming.days) != len(existing.days):
         raise PlanEditError(f"day count must stay at {len(existing.days)}")
 
-    attraction_index = {
-        _place_key(item): item for day in existing.days for item in day.attractions
-    }
+    attraction_index = {_place_key(item): item for day in existing.days for item in day.attractions}
     meal_index = {_name_key(item.name): item for day in existing.days for item in day.meals}
     hotel_index = {_name_key(day.hotel.name): day.hotel for day in existing.days if day.hotel}
     default_hotel = next((day.hotel for day in existing.days if day.hotel), None)

@@ -70,8 +70,5 @@ def test_total_is_the_sum_of_its_parts() -> None:
     budget = calculate_budget([day(0, hotel("甲酒店", 300)), day(1, None)], request(days=2))
 
     assert budget.total == (
-        budget.total_attractions
-        + budget.total_hotels
-        + budget.total_meals
-        + budget.total_transportation
+        budget.total_attractions + budget.total_hotels + budget.total_meals + budget.total_transportation
     )

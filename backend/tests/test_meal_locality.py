@@ -73,9 +73,7 @@ def poi(name: str, longitude: float, latitude: float, cost: str = "30") -> dict:
 
 
 def test_around_search_returns_located_meals(monkeypatch) -> None:
-    service = AMapService(
-        Settings(use_sample_data=False, amap_web_service_key="key", cache_enabled=True)
-    )
+    service = AMapService(Settings(use_sample_data=False, amap_web_service_key="key", cache_enabled=True))
     calls = {"count": 0}
 
     async def fake_get_json(url, params):
@@ -198,16 +196,12 @@ def test_enrich_meals_uses_around_search_and_fills_breaks() -> None:
     )
     agent = AroundMealAgent()
 
-    result = asyncio.run(
-        build_graph(agent)._enrich_meals({"request": request(), "plan": plan, "meals": []})
-    )
+    result = asyncio.run(build_graph(agent)._enrich_meals({"request": request(), "plan": plan, "meals": []}))
     day = result["plan"].days[0]
 
     assert {item.type for item in day.meals} == {"breakfast", "lunch", "dinner"}
     assert all(item.location is not None for item in day.meals)
-    assert all(
-        haversine_meters(attraction().location, item.location) < 1_000 for item in day.meals
-    )
+    assert all(haversine_meters(attraction().location, item.location) < 1_000 for item in day.meals)
     assert 1200 in agent.radii, "breakfast pool must be searched around the hotel"
     assert result["plan"].budget is not None
     assert result["plan"].budget.total_meals > 0

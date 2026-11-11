@@ -175,9 +175,7 @@ def _user_prompt(
         attractions = "、".join(item.name for item in day.attractions) or "无"
         meals = "、".join(f"{meal.type}:{meal.name}" for meal in day.meals) or "无"
         hotel = day.hotel.name if day.hotel else "无"
-        lines.append(
-            f"- 第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；餐饮 {meals}；酒店 {hotel}"
-        )
+        lines.append(f"- 第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；餐饮 {meals}；酒店 {hotel}")
     lines += [
         "",
         f"候选景点：{json.dumps([item.name for item in candidates.attractions[:24]], ensure_ascii=False)}",

@@ -234,9 +234,7 @@ def test_revise_applies_patch_and_persists(owned_client, plan_payload, offline_m
     assert reloaded["days"][0]["description"] == "第 1 天改为室内展览"
 
 
-def test_revise_returns_503_when_model_is_unavailable(
-    owned_client, plan_payload, offline_mode, monkeypatch
-) -> None:
+def test_revise_returns_503_when_model_is_unavailable(owned_client, plan_payload, offline_mode, monkeypatch) -> None:
     created = owned_client.post("/api/trip/plan", json=plan_payload()).json()
     pipeline = get_pipeline()
 

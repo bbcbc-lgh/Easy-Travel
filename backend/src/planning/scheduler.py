@@ -24,7 +24,19 @@ MEAL_COST_CAP: dict[str, dict[str, int]] = {
 
 # Venues that make no sense for breakfast; used to keep 烧肉/火锅 out of the morning.
 NON_BREAKFAST_TERMS = (
-    "烧肉", "烤肉", "火锅", "放题", "自助", "日料", "寿喜", "海鲜", "烧烤", "串", "酒吧", "酒馆", "夜市",
+    "烧肉",
+    "烤肉",
+    "火锅",
+    "放题",
+    "自助",
+    "日料",
+    "寿喜",
+    "海鲜",
+    "烧烤",
+    "串",
+    "酒吧",
+    "酒馆",
+    "夜市",
 )
 
 # Drinks and desserts are not a meal; keep them out of lunch/dinner when a real
@@ -163,8 +175,7 @@ def enforce_load(
         candidates = [
             group
             for group in groups
-            if len(group) < max_per_day
-            and sum(load_of(existing) for existing in group) + load_of(item) <= max_load
+            if len(group) < max_per_day and sum(load_of(existing) for existing in group) + load_of(item) <= max_load
         ]
         if not candidates:
             continue

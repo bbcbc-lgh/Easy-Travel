@@ -271,9 +271,7 @@ def test_planner_logs_model_provenance_on_success() -> None:
             )
 
     with record_events() as handler:
-        plan = asyncio.run(
-            PlannerAgent(OkGateway()).run(make_request(days=1), [attraction], [hotel], [], [meal])
-        )
+        plan = asyncio.run(PlannerAgent(OkGateway()).run(make_request(days=1), [attraction], [hotel], [], [meal]))
 
     completed = events(handler, "planner.completed")
     assert completed, "expected a planner.completed event"
@@ -360,6 +358,7 @@ def test_startup_logs_effective_config() -> None:
     assert "llm.total_budget_seconds" in logged
     assert "amap.enabled" in logged
     assert "sample_data" in logged
+
 
 def test_log_fields_redact_api_keys() -> None:
     from src.service.logging import redact_secrets

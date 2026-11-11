@@ -49,9 +49,7 @@ class TripPlanRepository:
     def _migrate_owner_column(connection: sqlite3.Connection) -> None:
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(trip_plans)")}
         if "owner_id" not in columns:
-            connection.execute(
-                f"ALTER TABLE trip_plans ADD COLUMN owner_id TEXT NOT NULL DEFAULT '{LEGACY_OWNER}'"
-            )
+            connection.execute(f"ALTER TABLE trip_plans ADD COLUMN owner_id TEXT NOT NULL DEFAULT '{LEGACY_OWNER}'")
 
     def save_plan(self, request: TripPlanRequest, plan: TripPlan, owner_id: str) -> TripPlan:
         plan_id = plan.id or uuid4().hex

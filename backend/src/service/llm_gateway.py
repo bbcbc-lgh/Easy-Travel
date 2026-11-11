@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 RETRYABLE_ERRORS = (APITimeoutError, APIConnectionError, RateLimitError, InternalServerError)
 
 _REPAIR_INSTRUCTION = (
-    "上一次输出不符合要求：{error}。"
-    "请只输出修正后的完整 JSON，不要输出解释、Markdown 代码块或任何多余文字。"
+    "上一次输出不符合要求：{error}。请只输出修正后的完整 JSON，不要输出解释、Markdown 代码块或任何多余文字。"
 )
 
 
@@ -148,9 +147,7 @@ class LLMGateway:
                         if repaired:
                             break
                         repaired = True
-                        messages = _repair_messages(
-                            system_prompt, user_prompt, completion.content, str(exc)
-                        )
+                        messages = _repair_messages(system_prompt, user_prompt, completion.content, str(exc))
                         log_event(
                             logger,
                             "llm.repair",

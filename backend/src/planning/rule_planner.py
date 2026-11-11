@@ -58,8 +58,7 @@ class RulePlanner:
             days=days,
             weather_info=list(candidates.weather),
             overall_suggestions=(
-                f"建议按区域集中游览，使用{request.transportation}衔接；"
-                "出发前再次确认开放时间、门票预约和天气变化。"
+                f"建议按区域集中游览，使用{request.transportation}衔接；出发前再次确认开放时间、门票预约和天气变化。"
             ),
             budget=calculate_budget(days, request),
         )

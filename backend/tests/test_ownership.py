@@ -58,6 +58,7 @@ def test_list_only_returns_own_plans(owned_client, other_client, plan_payload, o
     assert [item["id"] for item in mine] == [first["id"]]
     assert [item["id"] for item in theirs] == [second["id"]]
 
+
 def test_owner_can_delete_their_plan(owned_client, plan_payload, offline_mode) -> None:
     created = owned_client.post("/api/trip/plan", json=plan_payload()).json()
 

@@ -74,7 +74,11 @@ def test_far_meals_are_replaced_by_nearby_ones(monkeypatch) -> None:
     plan = plan_with([meal("很远餐厅A", 121.5, 31.5), meal("很远餐厅B", 121.6, 31.6), meal("很远餐厅C", 121.7, 31.7)])
 
     async def fake_around(request, location, radius, limit):
-        return [meal("巷口小馆", 120.1515, 30.2715), meal("街角面馆", 120.1508, 30.2706), meal("早餐铺", 120.1502, 30.2702)]
+        return [
+            meal("巷口小馆", 120.1515, 30.2715),
+            meal("街角面馆", 120.1508, 30.2706),
+            meal("早餐铺", 120.1502, 30.2702),
+        ]
 
     monkeypatch.setattr(pipeline.meal_agent, "run_around", fake_around)
 
@@ -101,9 +105,7 @@ def test_untouched_days_keep_their_meals(monkeypatch) -> None:
     assert plan.days[0].meals[0].name == "很远餐厅A"
 
 
-def test_revision_reanchors_only_the_changed_days(
-    monkeypatch, owned_client, plan_payload, offline_mode
-) -> None:
+def test_revision_reanchors_only_the_changed_days(monkeypatch, owned_client, plan_payload, offline_mode) -> None:
     """The revise endpoint must feed changed day indexes into meal enrichment."""
     from src.api.deps import get_pipeline
     from src.model.schemas import DayEdit, PlanPatch
@@ -131,9 +133,7 @@ def test_revision_reanchors_only_the_changed_days(
     assert "days" not in captured, "a description-only edit needs no new meal anchors"
 
 
-def test_revision_reanchors_days_whose_places_changed(
-    monkeypatch, owned_client, plan_payload, offline_mode
-) -> None:
+def test_revision_reanchors_days_whose_places_changed(monkeypatch, owned_client, plan_payload, offline_mode) -> None:
     from src.api.deps import get_pipeline
     from src.model.schemas import DayEdit, PlanPatch
 
@@ -158,6 +158,7 @@ def test_revision_reanchors_days_whose_places_changed(
 
     assert response.status_code == 200
     assert captured.get("days") == {0}
+
 
 def test_collect_for_edit_prefers_around_search(monkeypatch) -> None:
     pipeline = TripPlanningPipeline(Settings(use_sample_data=True))

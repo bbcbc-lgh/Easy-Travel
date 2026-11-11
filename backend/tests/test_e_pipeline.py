@@ -109,9 +109,7 @@ def test_amap_cache_is_keyed_by_request_shape(monkeypatch) -> None:
 
 
 def test_amap_cache_can_be_disabled(monkeypatch) -> None:
-    service = AMapService(
-        Settings(use_sample_data=False, amap_web_service_key="key", cache_enabled=False)
-    )
+    service = AMapService(Settings(use_sample_data=False, amap_web_service_key="key", cache_enabled=False))
     calls = {"count": 0}
 
     async def fake_search(**kwargs):

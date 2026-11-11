@@ -42,9 +42,7 @@ class AMapService:
         # Sample mode is for tests and offline demos: caching it would only make
         # stale demo data survive longer than it should.
         self._cache = (
-            TTLCache(settings.cache_ttl_seconds)
-            if settings.cache_enabled and not settings.use_sample_data
-            else None
+            TTLCache(settings.cache_ttl_seconds) if settings.cache_enabled and not settings.use_sample_data else None
         )
 
     def _cache_get(self, key: tuple) -> Any:
@@ -312,13 +310,48 @@ class AMapService:
                 error=str(exc),
             )
             return self._unavailable_weather_range(request, None)
-        weather_map = {0: "\u6674", 1: "\u5927\u90e8\u6674\u6717", 2: "\u591a\u4e91", 3: "\u9634", 45: "\u96fe", 48: "\u51bb\u96fe", 51: "\u6bdb\u6bdb\u96e8", 53: "\u5c0f\u96e8", 55: "\u5bc6\u96e8", 61: "\u5c0f\u96e8", 63: "\u4e2d\u96e8", 65: "\u5927\u96e8", 71: "\u5c0f\u96ea", 73: "\u4e2d\u96ea", 75: "\u5927\u96ea", 80: "\u9635\u96e8", 81: "\u5f3a\u9635\u96e8", 82: "\u66b4\u96e8", 95: "\u96f7\u66b4\u96e8"}
-        directions = ("\u5317", "\u4e1c\u5317", "\u4e1c", "\u4e1c\u5357", "\u5357", "\u897f\u5357", "\u897f", "\u897f\u5317")
+        weather_map = {
+            0: "\u6674",
+            1: "\u5927\u90e8\u6674\u6717",
+            2: "\u591a\u4e91",
+            3: "\u9634",
+            45: "\u96fe",
+            48: "\u51bb\u96fe",
+            51: "\u6bdb\u6bdb\u96e8",
+            53: "\u5c0f\u96e8",
+            55: "\u5bc6\u96e8",
+            61: "\u5c0f\u96e8",
+            63: "\u4e2d\u96e8",
+            65: "\u5927\u96e8",
+            71: "\u5c0f\u96ea",
+            73: "\u4e2d\u96ea",
+            75: "\u5927\u96ea",
+            80: "\u9635\u96e8",
+            81: "\u5f3a\u9635\u96e8",
+            82: "\u66b4\u96e8",
+            95: "\u96f7\u66b4\u96e8",
+        }
+        directions = (
+            "\u5317",
+            "\u4e1c\u5317",
+            "\u4e1c",
+            "\u4e1c\u5357",
+            "\u5357",
+            "\u897f\u5357",
+            "\u897f",
+            "\u897f\u5317",
+        )
         return [
             WeatherInfo(
-                date=str(dates[index]), day_weather=self._weather_text(weather_map, codes[index]), night_weather=self._weather_text(weather_map, codes[index]),
-                day_temp=round(float(high[index])), night_temp=round(float(low[index])), wind_direction=directions[round((self._to_int(direction[index]) or 0) / 45) % 8], wind_power=f"{round(float(speed[index]))} km/h",
-                notice="\u5929\u6c14\u7531 Open-Meteo \u9884\u62a5\u670d\u52a1\u63d0\u4f9b\u3002", source="open_meteo",
+                date=str(dates[index]),
+                day_weather=self._weather_text(weather_map, codes[index]),
+                night_weather=self._weather_text(weather_map, codes[index]),
+                day_temp=round(float(high[index])),
+                night_temp=round(float(low[index])),
+                wind_direction=directions[round((self._to_int(direction[index]) or 0) / 45) % 8],
+                wind_power=f"{round(float(speed[index]))} km/h",
+                notice="\u5929\u6c14\u7531 Open-Meteo \u9884\u62a5\u670d\u52a1\u63d0\u4f9b\u3002",
+                source="open_meteo",
             )
             for index in range(request.days)
         ]
@@ -340,14 +373,16 @@ class AMapService:
                     [
                         asyncio.create_task(
                             self.estimate_route(
-                        origin_name=origin_name,
-                        origin=origin,
-                        destination_name=destination_name,
-                        destination=destination,
-                        request=request,
-                    )
+                                origin_name=origin_name,
+                                origin=origin,
+                                destination_name=destination_name,
+                                destination=destination,
+                                request=request,
+                            )
                         )
-                        for (origin_name, origin), (destination_name, destination) in zip(route_points, route_points[1:], strict=False)
+                        for (origin_name, origin), (destination_name, destination) in zip(
+                            route_points, route_points[1:], strict=False
+                        )
                     ],
                 )
             )
@@ -712,9 +747,7 @@ class AMapService:
             if part.strip()
         ]
         preference_keywords = [
-            f"{request.city} {part}"
-            for part in preference_parts
-            if not AMapService._is_meal_preference(part)
+            f"{request.city} {part}" for part in preference_parts if not AMapService._is_meal_preference(part)
         ]
         keywords = [*preference_keywords, *base_keywords]
         return list(dict.fromkeys(keywords))
@@ -915,8 +948,16 @@ class AMapService:
         business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
         if business_cost:
             return business_cost
-        costs = {"\u9752\u5e74\u65c5\u820d": 120, "\u7ecf\u6d4e\u578b\u9152\u5e97": 280, "\u8212\u9002\u578b\u9152\u5e97": 520, "\u9ad8\u7aef\u9152\u5e97": 980}
-        return costs.get(accommodation, {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460))
+        costs = {
+            "\u9752\u5e74\u65c5\u820d": 120,
+            "\u7ecf\u6d4e\u578b\u9152\u5e97": 280,
+            "\u8212\u9002\u578b\u9152\u5e97": 520,
+            "\u9ad8\u7aef\u9152\u5e97": 980,
+        }
+        return costs.get(
+            accommodation,
+            {"\u7ecf\u6d4e": 260, "\u4e2d\u7b49": 460, "\u8212\u9002": 720, "\u8c6a\u534e": 980}.get(budget, 460),
+        )
 
     @staticmethod
     def _estimate_meal_cost(budget: str, poi: dict[str, Any]) -> int:

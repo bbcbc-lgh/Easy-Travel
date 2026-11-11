@@ -63,8 +63,7 @@ class PlanCritic:
             travel = _intra_day_meters(day)
             if travel > DAY_TRAVEL_LIMIT_METERS:
                 critique.issues.append(
-                    f"第 {label} 天景点间总移动约 {travel / 1000:.0f} 公里，跨度过大，"
-                    "请把当天景点集中到同一区域。"
+                    f"第 {label} 天景点间总移动约 {travel / 1000:.0f} 公里，跨度过大，请把当天景点集中到同一区域。"
                 )
 
             if sum(item.visit_duration for item in day.attractions) > DAILY_ATTRACTION_LIMIT_MINUTES:
@@ -83,8 +82,7 @@ class PlanCritic:
 
             if day_load(day) > DAILY_LOAD_LIMIT:
                 critique.notes.append(
-                    f"第 {label} 天安排了 {describe_load(day)}，按景点类型估算一天走不完，"
-                    "建议减掉一个或拆到次日。"
+                    f"第 {label} 天安排了 {describe_load(day)}，按景点类型估算一天走不完，建议减掉一个或拆到次日。"
                 )
 
         if critique.issues or critique.notes:

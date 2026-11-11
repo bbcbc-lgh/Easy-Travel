@@ -104,9 +104,7 @@ def request() -> TripPlanRequest:
 
 
 def test_critic_notes_an_overloaded_day_without_forcing_a_replan() -> None:
-    plan = build_plan(
-        day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆"))
-    )
+    plan = build_plan(day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆")))
 
     critique = PlanCritic().review(request(), plan)
 

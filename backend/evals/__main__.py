@@ -1,7 +1,7 @@
 """Command line entry point.
 
-    python -m evals --mode sample --limit 5
-    python -m evals --mode live --judge --limit 3
+python -m evals --mode sample --limit 5
+python -m evals --mode live --judge --limit 3
 """
 
 import argparse
