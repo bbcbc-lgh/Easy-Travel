@@ -213,6 +213,25 @@ def test_runner_executes_a_case_offline() -> None:
     assert result.metrics.score > 0
 
 
+def test_a_failed_case_is_recorded_instead_of_raising() -> None:
+    """Regression: the failure path hand-built CaseMetrics and missed a field, so a
+    provider error crashed the eval run instead of being reported as one bad case."""
+
+    class ExplodingPipeline:
+        async def run(self, request: TripPlanRequest):
+            raise RuntimeError("provider down")
+
+    case = load_cases(limit=1)[0]
+
+    result = asyncio.run(run_case(case, ExplodingPipeline(), offline=False))
+
+    assert result.error == "RuntimeError: provider down"
+    assert result.metrics.case_id == case.id
+    assert result.metrics.days == 0
+    assert result.metrics.score == 0.0
+    assert result.metrics.degraded is True
+
+
 def test_judge_summary_lists_every_day() -> None:
     summary = build_plan_summary(build_plan(days=3))
 

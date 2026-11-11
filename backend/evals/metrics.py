@@ -27,23 +27,32 @@ PREFERENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 @dataclass(slots=True)
 class CaseMetrics:
+    """One case's measurements.
+
+    Every field but ``case_id`` defaults to "nothing measured". The runner builds
+    a blank record for a case that failed to produce a plan, and that path used to
+    enumerate all fields by hand - so adding a field here (``hours_known_rate`` was
+    added that way) made the failure path raise ``TypeError`` instead of recording
+    the failure. Defaults make that impossible.
+    """
+
     case_id: str
-    days: int
-    degraded: bool
-    avg_intra_day_km: float
-    max_intra_day_km: float
-    duplicate_attractions: int
-    day_structure_ok: bool
-    meals_complete_rate: float
-    cap_violations: int
-    price_estimated: int
-    price_unknown: int
-    preference_hit_rate: float
-    hours_known_rate: float
-    budget_total: int
-    reference_budget: int
-    budget_deviation: float
-    score: float
+    days: int = 0
+    degraded: bool = False
+    avg_intra_day_km: float = 0.0
+    max_intra_day_km: float = 0.0
+    duplicate_attractions: int = 0
+    day_structure_ok: bool = False
+    meals_complete_rate: float = 0.0
+    cap_violations: int = 0
+    price_estimated: int = 0
+    price_unknown: int = 0
+    preference_hit_rate: float = 0.0
+    hours_known_rate: float = 0.0
+    budget_total: int = 0
+    reference_budget: int = 0
+    budget_deviation: float = 0.0
+    score: float = 0.0
 
     def as_dict(self) -> dict:
         return asdict(self)

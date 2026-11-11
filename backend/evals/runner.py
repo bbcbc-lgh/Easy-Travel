@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from evals.judge import judge_plan
 from evals.metrics import CaseMetrics, measure
@@ -21,7 +22,9 @@ class EvalCase:
     start_date: str
     days: int
     preferences: str
-    budget: str
+    # Mirrors TripPlanRequest's Literal so to_request() is type-checkable; values
+    # still come from cases.json, where pydantic enforces them at request time.
+    budget: Literal["经济", "中等", "舒适", "豪华"]
     transportation: str
     accommodation: str
 
@@ -68,24 +71,9 @@ async def run_case(
     except Exception as exc:  # noqa: BLE001 - a failed case is data, not a crash
         return EvalResult(
             case=case,
-            metrics=CaseMetrics(
-                case_id=case.id,
-                days=0,
-                degraded=True,
-                avg_intra_day_km=0.0,
-                max_intra_day_km=0.0,
-                duplicate_attractions=0,
-                day_structure_ok=False,
-                meals_complete_rate=0.0,
-                cap_violations=0,
-                price_estimated=0,
-                price_unknown=0,
-                preference_hit_rate=0.0,
-                budget_total=0,
-                reference_budget=0,
-                budget_deviation=0.0,
-                score=0.0,
-            ),
+            # A blank record: every field defaults to "nothing measured", so this
+            # cannot break when CaseMetrics grows a field.
+            metrics=CaseMetrics(case_id=case.id, degraded=True),
             error=f"{type(exc).__name__}: {exc}",
         )
 
