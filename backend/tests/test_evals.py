@@ -3,8 +3,10 @@ from datetime import date
 
 import pytest
 
+from evals.gates import summarise, violations
 from evals.judge import build_plan_summary
 from evals.metrics import (
+    CaseMetrics,
     budget_deviation,
     cap_violations,
     composite_score,
@@ -16,7 +18,7 @@ from evals.metrics import (
     price_counts,
     reference_budget,
 )
-from evals.runner import build_pipeline, load_cases, run_case
+from evals.runner import EvalResult, build_pipeline, load_cases, run_case
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
 
 
@@ -238,3 +240,66 @@ def test_judge_summary_lists_every_day() -> None:
     assert "第 1 天" in summary
     assert "第 3 天" in summary
     assert "预算合计" in summary
+
+
+# --- gates: turning a score into a pass/fail signal ---------------------------
+
+
+def _results(*specs: tuple[float, bool, bool]) -> list[EvalResult]:
+    """Build results from (score, degraded, errored) triples."""
+    case = load_cases(limit=1)[0]
+    results = []
+    for index, (score, degraded, errored) in enumerate(specs):
+        results.append(
+            EvalResult(
+                case=case,
+                metrics=CaseMetrics(case_id=f"c{index}", degraded=degraded, score=score),
+                error="boom" if errored else None,
+            )
+        )
+    return results
+
+
+def test_summary_reports_mean_and_ratios() -> None:
+    summary = summarise(_results((90.0, False, False), (70.0, True, False), (0.0, True, True)))
+
+    assert summary.cases == 3
+    assert summary.scored == 2
+    assert summary.mean_score == 80.0
+    assert summary.degraded == 2
+    assert summary.errors == 1
+    assert summary.degraded_ratio == pytest.approx(2 / 3)
+
+
+def test_no_thresholds_means_no_violations() -> None:
+    """A plain run must stay a report, never a failure."""
+    assert violations(summarise(_results((10.0, True, True)))) == []
+
+
+def test_a_low_mean_score_is_a_violation() -> None:
+    summary = summarise(_results((72.3, True, False)))
+
+    assert violations(summary, min_score=70) == []
+    problems = violations(summary, min_score=80)
+
+    assert len(problems) == 1
+    assert "72.3" in problems[0] and "80" in problems[0]
+
+
+def test_a_run_with_no_score_fails_a_score_threshold() -> None:
+    summary = summarise(_results((0.0, True, True)))
+
+    problems = violations(summary, min_score=70)
+
+    assert problems and "no case produced a score" in problems[0]
+
+
+def test_error_and_degraded_thresholds() -> None:
+    summary = summarise(_results((80.0, True, False), (80.0, False, True)))
+
+    assert violations(summary, max_errors=1) == []
+    assert len(violations(summary, max_errors=0)) == 1
+    # Exactly half the cases fell back to the rule planner.
+    assert summary.degraded_ratio == pytest.approx(0.5)
+    assert violations(summary, max_degraded_ratio=0.5) == []
+    assert len(violations(summary, max_degraded_ratio=0.4)) == 1

@@ -8,8 +8,8 @@ import argparse
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from statistics import mean
 
+from evals.gates import summarise, violations
 from evals.report import render_report
 from evals.runner import EvalResult, build_pipeline, load_cases, run_all
 from src.service.logging import configure_logging
@@ -23,6 +23,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="only run the first N cases")
     parser.add_argument("--judge", action="store_true", help="also run the LLM-as-judge pass (live mode)")
     parser.add_argument("--out", type=Path, default=None, help="report path")
+    # Thresholds. Omitted means "just report"; CI passes them explicitly.
+    parser.add_argument("--min-score", type=float, default=None, help="fail when the mean score is below this")
+    parser.add_argument("--max-errors", type=int, default=None, help="fail when more cases than this raised")
+    parser.add_argument(
+        "--max-degraded-ratio",
+        type=float,
+        default=None,
+        help="fail when more than this share of cases fell back to the rule planner",
+    )
     return parser.parse_args(argv)
 
 
@@ -64,12 +73,27 @@ async def _main(args: argparse.Namespace) -> int:
     )
     output.write_text(report, encoding="utf-8")
 
-    scored = [result.metrics.score for result in results if result.error is None]
+    summary = summarise(results)
     print()
-    print(f"cases      : {len(results)}")
-    print(f"mean score : {mean(scored):.1f}" if scored else "mean score : n/a")
-    print(f"degraded   : {sum(1 for r in results if r.metrics.degraded)}/{len(results)}")
+    print(f"cases      : {summary.cases}")
+    print(f"mean score : {summary.mean_score if summary.mean_score is not None else 'n/a'}")
+    print(f"degraded   : {summary.degraded}/{summary.cases}")
+    print(f"errors     : {summary.errors}")
     print(f"report     : {output}")
+
+    problems = violations(
+        summary,
+        min_score=args.min_score,
+        max_errors=args.max_errors,
+        max_degraded_ratio=args.max_degraded_ratio,
+    )
+    if problems:
+        print()
+        for problem in problems:
+            print(f"FAIL: {problem}")
+        return 1
+    if args.min_score is not None or args.max_errors is not None or args.max_degraded_ratio is not None:
+        print("thresholds : passed")
     return 0
 
 
