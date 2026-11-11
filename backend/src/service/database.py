@@ -1,5 +1,7 @@
+import contextlib
 import json
 import sqlite3
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -156,10 +158,22 @@ class TripPlanRepository:
                 (plan_id, owner_id),
             ).fetchone()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """One short-lived connection: committed on success, always closed.
+
+        ``sqlite3.Connection`` as a context manager commits the transaction but
+        does **not** close the handle, so ``with sqlite3.connect(...)`` (the old
+        shape here) leaked one connection and one file descriptor per call. On a
+        long-running local server that eventually exhausts the process's handles.
+        """
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:  # commit on success, roll back on exception
+                yield connection
+        finally:
+            connection.close()
 
     @staticmethod
     def _resolve_database_path(value: str) -> Path:
