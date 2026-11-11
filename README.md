@@ -14,7 +14,7 @@
 
 ## 三步启动
 
-要求：Python 3.10+、Node.js 20.19+（或 22.12+）。
+要求：Python 3.11+（CI 在 3.12 上跑）、Node.js 20.19+（或 22.12+）。
 
 ```bash
 git clone https://github.com/bbcbc-lgh/Easy-Travel.git
@@ -118,8 +118,8 @@ npm run dev
 | `QWEATHER_HOST` | 否 | **必须填控制台给你的 API Host**（形如 `abc123.re.qweatherapi.com`）。旧的 `devapi.qweather.com` 对新 Key 会返回 `403 Invalid Host` |
 | `USE_SAMPLE_DATA` | 否 | `true` 强制离线：不调模型、不调高德，全部走本地样例 |
 | `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/easy_travel.sqlite3` |
-| `PLAN_DAILY_LIMIT` | 否 | 本机用量保护：同一浏览器每日生成次数，默认 20 |
-| `PLAN_MAX_CONCURRENCY` | 否 | 同时生成的任务上限，默认 2 |
+| `PLAN_DAILY_LIMIT` | 否 | 本机成本保护：同一浏览器每日生成次数，默认 20。**失败或中断的生成会退还次数**，只有真正出结果的才计数 |
+| `PLAN_MAX_CONCURRENCY` | 否 | 同时生成的任务上限，默认 2。只防你自己误点连开的账单，不是产品限流 |
 | `CACHE_ENABLED` / `CACHE_TTL_SECONDS` | 否 | POI / 天气 / 路线缓存，默认开启、10 分钟 |
 | `LOG_LEVEL` / `LOG_FORMAT` | 否 | `text` 或 `json` |
 
@@ -134,6 +134,7 @@ npm run dev
 - “谁的行程”靠浏览器里的匿名 ID 区分，**不是账号，也不是鉴权**：
   - 清除浏览器数据后，旧行程会变成找不到的孤儿记录（文件还在）。
   - 同一浏览器才能看到自己生成的行程。
+  - 不带这个 ID 的请求（`curl`、`/docs`、脚本）统一落到 `local` 这一个桶里，不会被拒绝——单机自用时不值得为这种事设门槛。
 
 ---
 
@@ -144,6 +145,23 @@ npm run dev
 如果你把它改成 `0.0.0.0`（例如想让手机在同一局域网访问），等于**把一个没有鉴权的服务暴露给整个网络**：任何能访问该端口的人都能看你生成的所有行程、消耗你的模型额度。仅在同一可信网络下临时这样做。
 
 同理，不要把它直接部署到公网 IP。真要做在线服务，需要先加鉴权、限流和 HTTPS——这些不在本项目的范围内。
+
+浏览器里的匿名 ID 只做数据隔离，不做鉴权；它也**不是**成本保护，每日次数计数存在进程内存里，重启即清零。真正兜住花费的是你在模型服务商那边设的额度上限。
+
+---
+
+## 可选：单容器运行
+
+除了脚本启动，也可以自己构建一个镜像，把前端静态文件和 API 放在同一个容器里（以非 root 用户运行）：
+
+```bash
+docker build -t easy-travel .
+docker run --rm -p 127.0.0.1:8000:8000 \
+  -e LLM_API_KEY=你的密钥 -e LLM_MODEL=deepseek-chat -e AMAP_WEB_KEY=你的高德Key \
+  -v easy-travel-data:/app/data easy-travel
+```
+
+打开 <http://127.0.0.1:8000>。注意端口映射写的是 `127.0.0.1:8000:8000` 而不是 `8000:8000`——后者会把一个无鉴权服务暴露给整个局域网。
 
 ---
 
@@ -172,7 +190,10 @@ npm run dev
 浏览器数据被清过，匿名 ID 变了。这是当前设计的已知限制。
 
 **能多开几个 worker 吗？**
-不能。单进程 SQLite + 内存配额，`--workers > 1` 会导致锁库和统计不一致。
+不能。单进程 SQLite + 进程内的成本计数，`--workers > 1` 会导致锁库和统计不一致。
+
+**能不能不带 `X-Client-Id` 直接调接口？**
+可以。`curl` 和 `/docs` 不用带它，请求会落到 `local` 这一个桶里；只有想让多个浏览器各自隔离时才需要带。
 
 ---
 
@@ -182,16 +203,19 @@ npm run dev
 cd backend
 pip install -r requirements-dev.txt
 ruff check src tests evals          # 后端 lint
-python -m pytest -q                 # 171 个测试，含离线模式
-python -m evals --mode sample       # 24 条 golden case 的离线评测基线
+pip-audit -r requirements.txt       # 依赖漏洞扫描（当前 0 条）
+python -m pytest -q                 # 184 个测试，含离线模式
+python -m evals --mode sample       # 24 条 golden case 的离线评测基线（当前 mean ≈ 72）
 python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
 cd ../frontend
 npm run lint                        # ESLint
-npm test                            # Vitest 单元测试
+npm test                            # Vitest 单元测试（9 个）
 npm run build                       # 类型检查 + 打包
 ```
 
 CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑后端测试、离线评测和前端构建。
+
+> 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 
 ### 目录结构
 
