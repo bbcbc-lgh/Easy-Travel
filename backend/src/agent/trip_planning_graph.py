@@ -151,25 +151,52 @@ class TripPlanningGraph:
         return {"plan": plan}
 
     async def _enrich_meals(self, state: TripPlanningState) -> TripPlanningState:
-        """Re-pick meals using around-search anchored at the hotel and each day's first stop.
-
-        The city-wide candidate pool is kept as a fallback, so offline/sample
-        runs (no coordinates) behave exactly as before.
-        """
+        """Re-pick meals using around-search anchored at the hotel and each day's first stop."""
         request = state["request"]
         plan = state["plan"]
         base_pool = list(state.get("meals") or [])
         started = perf_counter()
         await self._emit(state, "enrich_meals", "start")
 
+        picked_days = await self.enrich_meals(request, plan, base_pool)
+        await self._emit(
+            state,
+            "enrich_meals",
+            "done",
+            elapsed_ms=round((perf_counter() - started) * 1000, 1),
+            days_with_meals=picked_days,
+        )
+        return {"plan": plan}
+
+    async def enrich_meals(
+        self,
+        request: TripPlanRequest,
+        plan: TripPlan,
+        base_pool: list[Meal],
+        day_indexes: set[int] | None = None,
+    ) -> int:
+        """Re-pick meals around the hotel and each day's first stop.
+
+        Shared by the generation graph and the conversational revision path, so an
+        edited day is anchored the same way a freshly generated one is. The
+        city-wide ``base_pool`` stays as a fallback: offline/sample runs (no
+        coordinates) behave exactly as before.
+        """
+        targets = [day for day in plan.days if day_indexes is None or day.day_index in day_indexes]
+        if not targets:
+            return 0
+
         hotel = next((day.hotel for day in plan.days if day.hotel), None)
         breakfast_pool: list[Meal] = []
         if hotel and hotel.location is not None:
             breakfast_pool = await self.meal_agent.run_around(request, hotel.location, radius=1200, limit=8)
 
-        used_keys: set[str] = set()
+        untouched = [day for day in plan.days if day not in targets]
+        used_keys: set[str] = {
+            "".join(meal.name.split()).lower() for day in untouched for meal in day.meals
+        }
         picked_days = 0
-        for day in plan.days:
+        for day in targets:
             anchor = (
                 day.attractions[0].location
                 if day.attractions
@@ -189,14 +216,7 @@ class TripPlanningGraph:
                 picked_days += 1
 
         plan.budget = calculate_budget(plan.days, request)
-        await self._emit(
-            state,
-            "enrich_meals",
-            "done",
-            elapsed_ms=round((perf_counter() - started) * 1000, 1),
-            days_with_meals=picked_days,
-        )
-        return {"plan": plan}
+        return picked_days
 
     async def _enrich_routes(self, state: TripPlanningState) -> TripPlanningState:
         started = perf_counter()

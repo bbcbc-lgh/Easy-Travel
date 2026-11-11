@@ -9,7 +9,7 @@ from src.agent.review_agent import ReviewAgent
 from src.agent.trip_planning_graph import TripPlanningGraph
 from src.agent.weather_agent import WeatherQueryAgent
 from src.config import Settings, settings
-from src.model.schemas import TripPlan, TripPlanRequest
+from src.model.schemas import Meal, TripPlan, TripPlanRequest
 from src.planning.contracts import CandidatePlaces
 from src.planning.critic import PlanCritic
 from src.planning.reviser import PlanReviser
@@ -49,6 +49,16 @@ class TripPlanningPipeline:
     async def run(self, request: TripPlanRequest, on_event=None) -> TripPlan:
         return await self.graph.run(request, on_event=on_event)
 
+    async def enrich_meals(
+        self,
+        request: TripPlanRequest,
+        plan: TripPlan,
+        candidates: CandidatePlaces,
+        day_indexes: set[int] | None = None,
+    ) -> int:
+        """Re-anchor meals around the hotel/first stop, as generation does."""
+        return await self.graph.enrich_meals(request, plan, list(candidates.meals), day_indexes)
+
     async def collect(self, request: TripPlanRequest) -> CandidatePlaces:
         """Gather candidates for a plan that already exists (conversational edit)."""
         attractions, weather_info, hotels, meals = await asyncio.gather(
@@ -62,6 +72,37 @@ class TripPlanningPipeline:
             hotels=hotels,
             meals=meals,
             weather=weather_info,
+        )
+
+    async def collect_for_edit(self, request: TripPlanRequest, plan: TripPlan) -> CandidatePlaces:
+        """Candidates for a conversational edit, with meals anchored to the plan.
+
+        The city-wide search can surface restaurants a dozen kilometres away, and the
+        reviser can only choose what it is given. Around-search on each day's hotel
+        and first stop keeps every meal candidate walkable from somewhere in the plan.
+        Falls back to the city pool when around-search yields nothing (offline runs).
+        """
+        base = await self.collect(request)
+        local: list[Meal] = []
+        seen: set[str] = set()
+        for day in plan.days:
+            anchors = [item.location for item in day.attractions[:1]]
+            if day.hotel and day.hotel.location:
+                anchors.append(day.hotel.location)
+            for anchor in anchors:
+                for meal in await self.meal_agent.run_around(request, anchor, radius=2500, limit=10):
+                    key = "".join(meal.name.split()).lower()
+                    if key and key not in seen:
+                        seen.add(key)
+                        local.append(meal)
+
+        if not local:
+            return base
+        return CandidatePlaces(
+            attractions=base.attractions,
+            hotels=base.hotels,
+            meals=local,
+            weather=base.weather,
         )
 
 

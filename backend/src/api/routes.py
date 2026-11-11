@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from src.api.deps import TripPlanningPipeline, get_generation_guard, get_pipeline, get_trip_plan_repository
 from src.api.security import get_owner_id
 from src.config import settings
-from src.model.schemas import HealthResponse, ReviseRequest, ReviseResponse, TripPlan, TripPlanRequest, TripPlanSummary
+from src.model.schemas import HealthResponse, PlanPatch, ReviseRequest, ReviseResponse, TripPlan, TripPlanRequest, TripPlanSummary
 from src.planning.reviser import PatchError
 from src.service.database import TripPlanRepository
 from src.service.generation_guard import GenerationGuard, QuotaExceededError, ServerBusyError
@@ -172,9 +172,21 @@ async def revise_trip_plan(
 
     try:
         async with guard.generation_slot(owner_id):
-            candidates = await pipeline.collect(request)
+            candidates = await pipeline.collect_for_edit(request, plan)
             patch = await pipeline.reviser.propose(request, plan, candidates, body.instruction)
             revised = pipeline.reviser.apply(plan, patch, request, candidates)
+            changed_days = _days_needing_meal_anchor(patch)
+            if changed_days:
+                try:
+                    await pipeline.enrich_meals(request, revised, candidates, changed_days)
+                except Exception as exc:  # noqa: BLE001 - meal enrichment is best effort
+                    log_event(
+                        logger,
+                        "plan.meal_enrichment_failed",
+                        level=logging.WARNING,
+                        plan_id=plan_id,
+                        reason=type(exc).__name__,
+                    )
     except QuotaExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -294,6 +306,15 @@ async def update_trip_plan(
     if updated is None:
         raise HTTPException(status_code=404, detail="Trip plan not found")
     return updated
+
+
+def _days_needing_meal_anchor(patch: PlanPatch) -> set[int]:
+    """Days whose meals depend on changed places and should be re-anchored."""
+    return {
+        edit.day_index
+        for edit in patch.days
+        if edit.meals is not None or edit.add_attractions or edit.remove_attractions or edit.hotel
+    }
 
 
 def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest, plan: TripPlan) -> TripPlan:
