@@ -1,5 +1,5 @@
 # Runs the same checks as CI, but before the commit instead of a minute after the
-# push. CI stays as the authority; this is only about feedback speed.
+# push. CI stays the authority; this is only about feedback speed.
 #
 #   pip install pre-commit && pre-commit install
 #   pre-commit run --all-files
@@ -31,16 +31,21 @@ repos:
 
   - repo: local
     hooks:
-      # Local hooks, because these three need the project's own environments:
-      # pyright resolves packages from backend/.venv, and eslint/prettier run
-      # through the frontend's node_modules.
+      # `language: python` gives pyright its own isolated environment, so the hook
+      # does not depend on which interpreter happens to be on PATH - the previous
+      # version hard-coded backend/.venv/Scripts/python, which only exists on
+      # Windows. `--project backend` makes it read backend/pyproject.toml, whose
+      # venvPath then points at backend/.venv for package resolution.
       - id: pyright
         name: pyright (backend)
-        entry: backend/.venv/Scripts/python -m pyright
-        language: system
+        entry: pyright --project backend
+        language: python
+        additional_dependencies: ["pyright==1.1.414"]
         files: ^backend/.*\.py$
         pass_filenames: false
 
+      # `npm --prefix frontend run ...` sets the working directory for the script,
+      # so ESLint finds frontend/eslint.config.js and Prettier finds its config.
       - id: frontend-lint
         name: eslint (frontend)
         entry: npm --prefix frontend run lint
@@ -50,7 +55,7 @@ repos:
 
       - id: frontend-format
         name: prettier (frontend)
-        entry: npx --prefix frontend prettier --check
+        entry: npm --prefix frontend run format:check
         language: system
-        files: ^frontend/.*\.(ts|vue|js|json|css)$
-        pass_filenames: true
+        files: ^frontend/.*\.(ts|vue|js|json|css|html)$
+        pass_filenames: false
