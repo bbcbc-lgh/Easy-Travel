@@ -4,164 +4,202 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 ![Vue](https://img.shields.io/badge/Vue-3-42B883.svg)
 
-EasyTravel 是一个可以直接在本地运行的 AI 旅行规划 Web 应用。输入目的地、日期、偏好和预算后，它会生成可编辑的多日行程，并展示景点、餐饮、住宿、天气、路线和预算信息。
+**本地运行的 AI 旅行规划工具。** 克隆仓库、填上自己的模型 Key、跑起来，就能生成可编辑的多日行程：景点、餐饮、住宿、天气、路线和预算都在一页里。
 
-项目适合用来体验 FastAPI、Vue 3、LangGraph 和 OpenAI 兼容接口的组合，也可以在没有 API Key 的情况下使用内置样例数据进行开发和演示。
+没有账号，没有云端服务，数据存在你自己电脑上的一个 SQLite 文件里。
 
-## 你可以用它做什么
+> **这是本地单用户工具，不是在线服务。** 默认只监听 `127.0.0.1`，也没有鉴权——请不要把它直接暴露到公网，详见[安全边界](#安全边界)。
 
-- 根据城市、日期、旅行偏好、预算、交通和住宿要求生成行程。
-- 接入高德 Web Service API 获取景点、餐饮、酒店、天气和路线信息。
-- 通过 OpenAI 兼容接口生成结构化计划；没有密钥或外部服务不可用时自动使用 fallback 数据。
-- 在浏览器中编辑每日行程、查看地图标记、保存历史计划，并导出图片或 PDF。
-- 通过 FastAPI 文档直接调试 API，或将前端替换为自己的客户端。
+---
 
-## 快速开始
+## 三步启动
 
-### 环境要求
+要求：Python 3.10+、Node.js 20.19+（或 22.12+）。
 
-- Python 3.10+
-- Node.js 20.19+（或 22.12+）
-- npm
-
-### 获取代码
-
-```powershell
+```bash
 git clone https://github.com/bbcbc-lgh/Easy-Travel.git
 cd Easy-Travel
 ```
 
-### 1. 启动后端
+### 1. 填配置
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m uvicorn src.API.Main:app --host 127.0.0.1 --port 8000 --reload
+```bash
+cp backend/.env.example backend/.env
 ```
 
-后端地址：<http://127.0.0.1:8000>
+打开 `backend/.env`，至少填一项能用的模型配置：
 
-API 文档：<http://127.0.0.1:8000/docs>
+```env
+LLM_API_KEY=你的密钥
+LLM_BASE_URL=https://api.deepseek.com   # 任意 OpenAI 兼容服务；用 OpenAI 可留空
+LLM_MODEL=deepseek-chat
+```
 
-### 2. 启动前端
+再填一个高德 Web 服务 Key（个人开发者免费申请）：
+
+```env
+AMAP_WEB_KEY=你的高德Key
+```
+
+### 2. 启动
+
+**Windows**
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+```
+
+**macOS / Linux**
+
+```bash
+bash scripts/dev.sh
+```
+
+脚本会自动建虚拟环境、装依赖、补 `.env`，然后同时拉起后端和前端。
+
+### 3. 打开
+
+前端 <http://127.0.0.1:5173> · API 文档 <http://127.0.0.1:8000/docs>
+
+不想用脚本，也可以手动起两个终端：
+
+```bash
+# 终端 1
+cd backend
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt   # Windows
+.venv/bin/python -m pip install -r requirements.txt       # macOS / Linux
+.venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+
+# 终端 2
 cd frontend
 npm install
 npm run dev
 ```
 
-前端地址：<http://127.0.0.1:5173>
+> 完全没有 Key 也能跑：会进入**规则规划模式**，用样例地点生成一份可演示的行程，页面上会明确标注“规则生成”。
 
-启动两个服务后，打开前端地址即可生成第一份旅行计划。首次运行不配置任何密钥也可以完成完整流程。
+---
 
-## 配置
+## 它怎么工作
 
-### 后端
+一次生成由三层组合完成：
 
-在 `backend/.env` 中填写需要的配置。可以从 `backend/.env.example` 开始：
+| 层 | 负责 | 数据来源 |
+|---|---|---|
+| 数据层 | 候选景点、餐饮、酒店、天气、路线 | 高德 Web 服务 + 和风天气（可选）/ Open-Meteo |
+| 模型 | 只决定“每天去哪几个、住哪家、怎么描述” | 任意 OpenAI 兼容接口 |
+| 确定性排程 | 按距离排序、按区域分组、按预算与距离选餐厅 | 本地计算 |
 
-```env
-APP_NAME=EasyTravel
-APP_ENV=development
-FASTAPI_API_HOST=127.0.0.1
-FASTAPI_API_PORT=8000
-CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+模型返回的只有**名称**，坐标、门票、日期、预算、路线全部由服务端回填——所以模型无法编造价格和位置。生成完还有一道 `PlanCritic` 检查：单日过密、当天闭馆、餐饮超预算都会变成页面上的提醒。
 
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_MODEL=gpt-4o-mini
+几处刻意的设计：
 
-FASTAPI_AMAP_WEB_KEY=
-USE_SAMPLE_DATA=false
-DATABASE_PATH=data/easy_travel.sqlite3
-```
+- **降级会明说**：模型不可用时行程顶部标注“规则生成”，质量分被压到 60 以下。
+- **价格有来源**：每个价格都带 `api` / `estimated` / `unknown`，`unknown` 直接不显示金额。
+- **编辑不放假数据**：手动修改只接受库里已有的地点，客户端提交的坐标和价格会被丢弃。
+- **流式进度**：生成需要几十秒，页面显示的是真实阶段（收集候选 → 规划 → 路线 → 检查）和真实耗时。
 
-- `LLM_API_KEY`：OpenAI 或其他 OpenAI 兼容服务的密钥。留空时使用规则 fallback。
-- `LLM_BASE_URL`：兼容服务的 API 地址；使用 OpenAI 时可留空。
-- `FASTAPI_AMAP_WEB_KEY`：高德 Web Service Key。留空或请求失败时使用样例地点和本地距离估算。
-- `USE_SAMPLE_DATA=true`：强制离线模式，跳过 LLM 和高德请求，适合 CI、调试和演示。
-- `DATABASE_PATH`：SQLite 文件路径，默认保存在 `backend/data/` 下。
+---
 
-### 前端
+## 配置项
 
-在 `frontend/.env` 中填写：
-
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000/api
-VITE_AMAP_JS_KEY=
-```
-
-`VITE_AMAP_JS_KEY` 只影响地图加载；不配置时仍可生成和编辑行程。
-
-## API 示例
-
-所有接口都以 `/api` 为前缀：
-
-| 方法 | 路径 | 用途 |
+| 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/health` | 查看服务状态 |
-| `POST` | `/api/trip/plan` | 生成并保存旅行计划 |
-| `GET` | `/api/trip/plans` | 获取历史计划列表 |
-| `GET` | `/api/trip/plans/{plan_id}` | 获取计划详情 |
-| `PUT` | `/api/trip/plans/{plan_id}` | 保存编辑后的计划 |
+| `LLM_API_KEY` | 是（可留空） | 模型密钥。留空则规则规划 |
+| `LLM_BASE_URL` | 否 | 兼容服务地址，OpenAI 官方可留空 |
+| `LLM_MODEL` | 是 | 模型名 |
+| `LLM_TIMEOUT_SECONDS` | 否 | 单次调用超时，默认 120 |
+| `LLM_MAX_TOKENS` | 否 | 输出上限，`0` = 服务商默认。推理型模型的思考 token 也占这个预算 |
+| `LLM_PROFILES` | 否 | 多模型回退链（JSON 数组），不填则由 `LLM_MODEL` 生成单个 |
+| `AMAP_WEB_KEY` | 建议 | 高德 Web 服务 Key；留空则用样例地点 |
+| `QWEATHER_API_KEY` | 否 | 和风天气 Key；配置后优先取预报 |
+| `QWEATHER_HOST` | 否 | **必须填控制台给你的 API Host**（形如 `abc123.re.qweatherapi.com`）。旧的 `devapi.qweather.com` 对新 Key 会返回 `403 Invalid Host` |
+| `USE_SAMPLE_DATA` | 否 | `true` 强制离线：不调模型、不调高德，全部走本地样例 |
+| `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/easy_travel.sqlite3` |
+| `PLAN_DAILY_LIMIT` | 否 | 本机用量保护：同一浏览器每日生成次数，默认 20 |
+| `PLAN_MAX_CONCURRENCY` | 否 | 同时生成的任务上限，默认 2 |
+| `CACHE_ENABLED` / `CACHE_TTL_SECONDS` | 否 | POI / 天气 / 路线缓存，默认开启、10 分钟 |
+| `LOG_LEVEL` / `LOG_FORMAT` | 否 | `text` 或 `json` |
 
-生成计划的请求示例：
+和风天气只覆盖未来 7 天；行程超出这个范围会自动回退到 Open-Meteo，不需要你处理。
 
-```json
-{
-  "city": "北京",
-  "start_date": "2026-07-01",
-  "days": 3,
-  "preferences": "历史文化、城市漫游、美食，节奏适中",
-  "budget": "中等",
-  "transportation": "公共交通",
-  "accommodation": "经济型酒店"
-}
-```
+---
 
-`budget` 支持 `经济`、`中等`、`舒适`、`豪华`；`days` 支持 1 到 14 天。更完整的请求和响应模型可在 `/docs` 中查看。
+## 数据与隐私
 
-## 开发命令
+- 所有行程存在 `backend/data/easy_travel.sqlite3`，删掉这个文件就等于清空。
+- 页面上可以直接**删除单份行程**（结果页右上角）。
+- “谁的行程”靠浏览器里的匿名 ID 区分，**不是账号，也不是鉴权**：
+  - 清除浏览器数据后，旧行程会变成找不到的孤儿记录（文件还在）。
+  - 同一浏览器才能看到自己生成的行程。
 
-```powershell
-# 后端测试
+---
+
+## 安全边界
+
+默认 `FASTAPI_API_HOST=127.0.0.1`，只有本机能访问。
+
+如果你把它改成 `0.0.0.0`（例如想让手机在同一局域网访问），等于**把一个没有鉴权的服务暴露给整个网络**：任何能访问该端口的人都能看你生成的所有行程、消耗你的模型额度。仅在同一可信网络下临时这样做。
+
+同理，不要把它直接部署到公网 IP。真要做在线服务，需要先加鉴权、限流和 HTTPS——这些不在本项目的范围内。
+
+---
+
+## 费用
+
+一次生成大约消耗 **600–1000 输入 token + 3000–7000 输出 token**，其中大部分是推理模型的思考 token。按常见 API 价格，一次约几分钱到几毛钱人民币。
+
+想先看看效果、不想花钱：把 `USE_SAMPLE_DATA=true`，或用 `python -m evals --mode sample` 离线跑一遍 24 个用例。
+
+---
+
+## 常见问题
+
+**生成出来写着“规则生成”？**
+模型没生效。检查 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`，然后看后端日志里的 `llm.failed` 一行，原因会写清楚（超时、鉴权、模型名错误等）。
+
+**高德相关数据都是“演示数据”？**
+`AMAP_WEB_KEY` 没读到。注意变量名是 `AMAP_WEB_KEY`，不是旧版的 `FASTAPI_AMAP_WEB_KEY`。
+
+**天气报 `403 Invalid Host`？**
+和风现在按账号分配 API Host，把 `QWEATHER_HOST` 改成控制台里的那个主机名。
+
+**历史计划不见了？**
+浏览器数据被清过，匿名 ID 变了。这是当前设计的已知限制。
+
+**能多开几个 worker 吗？**
+不能。单进程 SQLite + 内存配额，`--workers > 1` 会导致锁库和统计不一致。
+
+---
+
+## 开发与测试
+
+```bash
 cd backend
-.\.venv\Scripts\python -m pytest
-
-# 前端生产构建
-cd ..\frontend
-npm run build
+python -m pytest -q                 # 157 个测试，含离线模式
+python -m evals --mode sample       # 24 条 golden case 的离线评测基线
+python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
+cd ../frontend
+npm run build                       # 类型检查 + 打包
 ```
 
-后端使用 Python 内置 SQLite，不需要额外启动数据库服务。外部服务不可用时，fallback 逻辑仍可用于本地开发。
+CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑后端测试、离线评测和前端构建。
 
-## 项目结构
+### 目录结构
 
 ```text
-.
-├── backend/
-│   ├── src/Agent/      # Agent 和 LangGraph 编排
-│   ├── src/API/        # FastAPI 应用与路由
-│   ├── src/Model/      # Pydantic 数据模型
-│   ├── src/Service/    # LLM、高德、SQLite 和样例数据服务
-│   └── tests/          # 后端测试
-└── frontend/
-    └── src/             # Vue 页面、路由、API client 和类型
+backend/
+├── src/agent/       LangGraph 编排与规划/评审 Agent
+├── src/planning/    排程、预算、密度、营业时间、critic、对话式修订
+├── src/service/     LLM 网关、高德、天气、SQLite、缓存、日志
+├── src/api/         FastAPI 路由、依赖、身份隔离
+├── evals/           golden case 与评测指标
+└── tests/
+frontend/            Vue 3 + Vite + Ant Design Vue
+scripts/             Windows / macOS 一键启动脚本
 ```
-
-## 参与贡献
-
-欢迎通过 Issue 报告问题或提出功能建议，也欢迎提交 Pull Request。
-
-提交前请至少运行：
-
-1. `backend/.venv/Scripts/python -m pytest`
-2. `frontend/npm run build`
-
-提交 Issue 时，尽量附上运行环境、复现步骤、相关日志，以及是否开启了 `USE_SAMPLE_DATA`。
 
 ## 许可证
 
-本项目基于 [MIT License](LICENSE) 开源。
+[MIT License](LICENSE)
