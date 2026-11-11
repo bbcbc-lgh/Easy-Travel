@@ -10,6 +10,14 @@
       </header>
 
       <section class="form-card" aria-label="旅行规划表单">
+        <a-alert
+          v-if="llmReady === false"
+          class="config-hint"
+          type="info"
+          show-icon
+          message="当前未配置模型，生成会使用规则规划"
+          description="在 backend/.env 里填写 LLM_API_KEY 与 LLM_BASE_URL 后重启后端，即可使用 AI 规划。"
+        />
         <a-form layout="vertical" :model="formData" @finish="handleSubmit">
           <div class="form-section">
             <div class="form-section-title">
@@ -77,12 +85,24 @@
           </div>
 
           <div v-if="loading" class="loading-box">
-            <a-progress :percent="loadingProgress" status="active" />
-            <span>{{ loadingStatus }}</span>
+            <div class="loading-summary">
+              <strong>{{ currentStageLabel }}</strong>
+              <span class="loading-elapsed">已用时 {{ elapsedSeconds }} 秒</span>
+            </div>
+            <ul class="stage-list">
+              <li v-for="stage in stageOrder" :key="stage.key" :class="['stage-item', stageState(stage.key)]">
+                <span class="stage-indicator" aria-hidden="true" />
+                <span class="stage-label">{{ stage.label }}</span>
+                <small v-if="stageDurations[stage.key] !== undefined">
+                  {{ (stageDurations[stage.key] / 1000).toFixed(1) }} 秒
+                </small>
+              </li>
+            </ul>
+            <p class="loading-hint">模型正在规划行程，通常需要 30–70 秒，请不要关闭页面。</p>
           </div>
 
           <div class="actions-row">
-            <a-button size="large" @click="resetForm">
+            <a-button size="large" :disabled="loading" @click="resetForm">
               <template #icon><RotateCcw :size="17" /></template>
               重新填写
             </a-button>
@@ -100,16 +120,34 @@
 <script setup lang="ts">
 import { message } from 'ant-design-vue'
 import { MapPin, MessageSquareText, Plane, RotateCcw, Settings2, Sparkles } from 'lucide-vue-next'
-import { reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { generateTripPlan } from '../services/api'
-import type { TripPlanRequest } from '../types/trip'
+import { getHealth, streamTripPlan } from '../services/api'
+import type { PlanStageEvent } from '../services/api'
+import type { TripPlan, TripPlanRequest } from '../types/trip'
 
 const router = useRouter()
 const loading = ref(false)
-const loadingProgress = ref(0)
-const loadingStatus = ref('')
+const elapsedSeconds = ref(0)
+const llmReady = ref<boolean | null>(null)
+
+const stageOrder = [
+  { key: 'collect_candidates', label: '收集候选地点' },
+  { key: 'create_plan', label: '规划行程' },
+  { key: 'enrich_routes', label: '计算路线' },
+  { key: 'review_plan', label: '质量检查' }
+] as const
+
+const stageStatus = ref<Record<string, 'pending' | 'active' | 'done'>>({})
+const stageDurations = ref<Record<string, number>>({})
+
+const currentStageLabel = computed(() => {
+  const active = stageOrder.find((stage) => stageStatus.value[stage.key] === 'active')
+  return active ? `正在${active.label}` : '正在准备'
+})
+
+let elapsedTimer: number | undefined
 
 type TripPlanForm = Omit<TripPlanRequest, 'budget' | 'days' | 'preferences'> & {
   budget?: TripPlanRequest['budget']
@@ -148,6 +186,27 @@ function buildPreferences() {
   return parts.join('、')
 }
 
+function stageState(key: string) {
+  return stageStatus.value[key] || 'pending'
+}
+
+function markStage(event: PlanStageEvent) {
+  stageStatus.value = {
+    ...stageStatus.value,
+    [event.stage]: event.status === 'done' ? 'done' : 'active'
+  }
+  if (event.status === 'done' && event.elapsed_ms !== undefined) {
+    stageDurations.value = { ...stageDurations.value, [event.stage]: event.elapsed_ms }
+  }
+}
+
+function stopTimer() {
+  if (elapsedTimer !== undefined) {
+    window.clearInterval(elapsedTimer)
+    elapsedTimer = undefined
+  }
+}
+
 async function handleSubmit() {
   const { budget, days, transportation, accommodation } = formData
   if (!budget || !days || !transportation || !accommodation) {
@@ -155,38 +214,62 @@ async function handleSubmit() {
   }
 
   loading.value = true
-  loadingProgress.value = 0
-  loadingStatus.value = '正在整理你的行程需求'
+  stageStatus.value = {}
+  stageDurations.value = {}
+  elapsedSeconds.value = 0
+  const startedAt = Date.now()
+  elapsedTimer = window.setInterval(() => {
+    elapsedSeconds.value = Math.floor((Date.now() - startedAt) / 1000)
+  }, 1000)
 
-  const statuses = ['正在匹配景点', '正在查询天气', '正在挑选住宿', '正在编排行程']
-  const timer = window.setInterval(() => {
-    if (loadingProgress.value < 88) {
-      loadingProgress.value += 8
-      loadingStatus.value = statuses[Math.min(Math.floor(loadingProgress.value / 25), statuses.length - 1)]
-    }
-  }, 500)
+  let failure: string | null = null
+  let finished = false
 
   try {
-    const plan = await generateTripPlan({
-      city: formData.city,
-      start_date: formData.start_date,
-      days,
-      preferences: buildPreferences(),
-      budget,
-      transportation,
-      accommodation
-    })
-    window.clearInterval(timer)
-    loadingProgress.value = 100
-    loadingStatus.value = '行程已生成'
-    sessionStorage.setItem('tripPlan', JSON.stringify(plan))
-    await router.push(plan.id ? { name: 'shared-result', params: { id: plan.id } } : { name: 'result' })
+    await streamTripPlan(
+      {
+        city: formData.city,
+        start_date: formData.start_date,
+        days,
+        preferences: buildPreferences(),
+        budget,
+        transportation,
+        accommodation
+      },
+      {
+        onStage: markStage,
+        onPlan: (plan: TripPlan) => {
+          finished = true
+          sessionStorage.setItem('tripPlan', JSON.stringify(plan))
+          void router.push(plan.id ? { name: 'shared-result', params: { id: plan.id } } : { name: 'result' })
+        },
+        onError: (detail: string) => {
+          failure = detail
+        }
+      }
+    )
   } catch (error) {
-    const detail = error instanceof Error ? error.message : '请检查后端服务或 API 配置'
-    message.error(`生成计划失败：${detail}`)
+    failure = error instanceof Error ? error.message : '请检查后端服务或 API 配置'
   } finally {
-    window.clearInterval(timer)
+    stopTimer()
     loading.value = false
   }
+
+  if (failure) {
+    message.error(`生成计划失败：${failure}`)
+  } else if (!finished) {
+    message.error('生成未完成，请重试')
+  }
 }
+
+onBeforeUnmount(stopTimer)
+
+onMounted(async () => {
+  try {
+    const health = await getHealth()
+    llmReady.value = Boolean(health.services?.llm)
+  } catch {
+    llmReady.value = null
+  }
+})
 </script>

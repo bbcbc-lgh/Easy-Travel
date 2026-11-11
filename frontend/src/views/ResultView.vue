@@ -19,7 +19,11 @@
         <div>
           <p class="eyebrow">行程计划</p>
           <h1>{{ tripPlan.city }} <span class="trip-day-count">{{ tripPlan.days.length }}</span> 天游</h1>
-          <p>{{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}</p>
+          <p>
+            {{ tripPlan.start_date }} 至 {{ tripPlan.end_date }}
+            <a-tag v-if="tripPlan.degraded" color="error" class="plan-source-tag">规则生成</a-tag>
+            <a-tag v-else-if="tripPlan.quality" color="success" class="plan-source-tag">AI 规划</a-tag>
+          </p>
           <div class="overview-metrics">
             <div>
               <span>{{ allAttractions.length }}</span>
@@ -48,9 +52,9 @@
             <template #icon><Undo2 :size="17" /></template>
             取消
           </a-button>
-          <a-button v-if="tripPlan.id" @click="copyShareLink">
-            <template #icon><Link2 :size="17" /></template>
-            复制链接
+          <a-button v-if="tripPlan.id" danger @click="confirmDelete">
+            <template #icon><Trash2 :size="17" /></template>
+            删除
           </a-button>
           <a-dropdown :trigger="['click']">
             <a-button>
@@ -66,6 +70,15 @@
           </a-dropdown>
         </div>
       </header>
+
+      <a-alert
+        v-if="tripPlan.degraded"
+        class="data-notice"
+        type="error"
+        show-icon
+        message="本次行程由规则引擎生成，未经 AI 规划"
+        :description="`原因：${degradedReasonLabel(tripPlan.degraded_reason)}。内容仅供参考。`"
+      />
 
       <a-alert
         v-for="notice in tripPlan.data_notices || []"
@@ -102,6 +115,32 @@
         </div>
       </section>
 
+      <section class="section-block revise-block" id="revise" data-html2canvas-ignore>
+        <div class="section-title-row">
+          <h2>用一句话调整</h2>
+          <a-tag v-if="revising" color="processing">调整中</a-tag>
+        </div>
+        <div class="revise-row">
+          <a-input
+            v-model:value="reviseInstruction"
+            :disabled="revising"
+            placeholder="例如：第 2 天下午换成室内活动，别太赶"
+            @press-enter="submitRevision"
+          />
+          <a-button
+            type="primary"
+            :loading="revising"
+            :disabled="!reviseInstruction.trim() || !tripPlan.id"
+            @click="submitRevision"
+          >
+            调整
+          </a-button>
+        </div>
+        <p class="revise-hint">只会改动你提到的部分，坐标、价格和路线会重新计算。</p>
+        <a-alert v-if="reviseReply" class="data-notice" type="success" show-icon :message="reviseReply" />
+        <a-alert v-if="reviseError" class="data-notice" type="error" show-icon :message="reviseError" />
+      </section>
+
       <section class="section-block" id="days">
         <h2>每日行程</h2>
         <div class="day-list">
@@ -122,7 +161,7 @@
               <Hotel :size="18" />
               <div>
                 <strong>{{ day.hotel.name }}</strong>
-                <small>{{ day.hotel.address }}  ·  {{ day.hotel.price_range }}  ·  约 {{ day.hotel.estimated_cost }} 元/晚</small>
+                <small>{{ day.hotel.address }}  ·  {{ day.hotel.price_range }}  ·  {{ priceText(day.hotel.estimated_cost, day.hotel.price_source) }}/晚</small>
               </div>
               <a-tag v-if="day.hotel.source === 'sample'" color="warning">演示数据</a-tag>
             </div>
@@ -131,8 +170,22 @@
               <div v-for="(attraction, attractionIndex) in day.attractions" :key="`${day.date}-${attraction.name}`" class="attraction-item">
                 <div class="attraction-rank">{{ attractionIndex + 1 }}</div>
                 <div>
-                  <h4>{{ attraction.name }}</h4>
-                  <small>{{ attraction.address }} · 建议 {{ attraction.visit_duration }} 分钟 · 门票 {{ attraction.ticket_price }} 元</small>
+                  <img
+                    v-if="attraction.image_url"
+                    :src="attraction.image_url"
+                    alt=""
+                    loading="lazy"
+                    class="attraction-thumb"
+                  />
+                  <h4>
+                    {{ attraction.name }}
+                    <a-tag v-if="attraction.level" color="green" class="attraction-level">{{ attraction.level }}</a-tag>
+                  </h4>
+                  <small>
+                    {{ attraction.address }} · 建议 {{ attraction.visit_duration }} 分钟 · {{ ticketText(attraction) }}
+                    <template v-if="attraction.opening_hours"> · 开放 {{ attraction.opening_hours }}</template>
+                    <template v-if="attraction.contact_phone"> · {{ attraction.contact_phone }}</template>
+                  </small>
                 </div>
                 <div v-if="editMode" class="edit-buttons" data-html2canvas-ignore>
                   <a-button size="small" :disabled="attractionIndex === 0" @click="moveAttraction(dayIndex, attractionIndex, 'up')">
@@ -153,11 +206,15 @@
                 <div>
                   <span>{{ mealTypeLabel(meal.type) }}</span>
                   <strong>{{ meal.name }}</strong>
-                  <small>{{ meal.address || meal.description || '暂无可导航地址' }}</small>
+                  <small>
+                    {{ meal.address || meal.description || '暂无可导航地址' }}
+                    <template v-if="meal.opening_hours"> · {{ meal.opening_hours }}</template>
+                  </small>
                 </div>
                 <div class="meal-cost">
                   <a-tag v-if="meal.source === 'sample'" color="warning">演示数据</a-tag>
-                  <span>约 {{ meal.estimated_cost }} 元</span>
+                  <a-tag v-else-if="meal.price_source === 'estimated'" color="default">估算</a-tag>
+                  <span>{{ priceText(meal.estimated_cost, meal.price_source) }}</span>
                 </div>
               </div>
               </div>
@@ -206,8 +263,6 @@
 
 <script setup lang="ts">
 import AMapLoader from '@amap/amap-jsapi-loader'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
 import {
   ArrowDown,
   ArrowLeft,
@@ -217,7 +272,6 @@ import {
   CloudSun,
   Download,
   Hotel,
-  Link2,
   MapPinned,
   Pencil,
   Route,
@@ -227,12 +281,12 @@ import {
   Undo2,
   WalletCards
 } from 'lucide-vue-next'
-import { message } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getTripPlan, updateTripPlan } from '../services/api'
-import type { TripPlan } from '../types/trip'
+import { deleteTripPlan, getTripPlan, reviseTripPlan, updateTripPlan } from '../services/api'
+import type { Attraction, PriceSource, TripPlan } from '../types/trip'
 
 const router = useRouter()
 const route = useRoute()
@@ -248,6 +302,10 @@ const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.
 const hotelNights = computed(() => Math.max((tripPlan.value?.days.length || 1) - 1, 1))
 const expandedDayIndices = ref<number[]>([0])
 const qualityWarnings = computed(() => tripPlan.value?.quality?.warnings || [])
+const reviseInstruction = ref('')
+const revising = ref(false)
+const reviseReply = ref('')
+const reviseError = ref('')
 let mapInstance: { destroy: () => void } | null = null
 
 function loadInitialPlan(): TripPlan | null {
@@ -334,14 +392,80 @@ function mealTypeLabel(type: string) {
 }
 
 function weatherSourceLabel(source?: string) {
-  return { amap: '高德天气', open_meteo: '天气预报', sample: '演示天气', unavailable: '暂无预报' }[source || 'unavailable'] || '暂无预报'
+  return { amap: '高德天气', open_meteo: '天气预报', qweather: '和风天气', sample: '演示天气', unavailable: '暂无预报' }[source || 'unavailable'] || '暂无预报'
 }
 
-async function copyShareLink() {
-  if (!tripPlan.value?.id) return
-  const url = `${window.location.origin}/result/${tripPlan.value.id}`
-  await navigator.clipboard.writeText(url)
-  message.success('链接已复制')
+function priceText(value: number, source?: PriceSource) {
+  if (source === 'unknown') return '以现场为准'
+  if (source === 'estimated') return `约 ${value} 元（估算）`
+  return `${value} 元`
+}
+
+function ticketText(attraction: Attraction) {
+  if (attraction.price_source === 'unknown') return '门票以现场为准'
+  return `门票 ${priceText(attraction.ticket_price, attraction.price_source)}`
+}
+
+function degradedReasonLabel(reason?: string | null) {
+  const labels: Record<string, string> = {
+    llm_disabled: '未配置可用的模型服务',
+    llm_provider_timeout: '模型响应超时',
+    llm_provider_connection: '无法连接模型服务',
+    llm_rate_limited: '模型服务限流',
+    llm_http_401: '模型服务鉴权失败',
+    llm_http_429: '模型服务限流',
+    llm_schema_invalid: '模型输出未通过校验',
+    llm_empty_content: '模型返回空内容',
+    llm_truncated: '模型输出被截断',
+    llm_invalid_json: '模型返回内容不是合法 JSON',
+    llm_budget_exhausted: '模型调用超出时间预算'
+  }
+  if (!reason) return '模型暂不可用'
+  return labels[reason] || reason
+}
+
+function confirmDelete() {
+  const id = tripPlan.value?.id
+  if (!id) return
+  Modal.confirm({
+    title: '删除这份行程？',
+    content: '删除后无法恢复，历史列表里也不会再出现。',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await deleteTripPlan(id)
+        sessionStorage.removeItem('tripPlan')
+        tripPlan.value = null
+        message.success('行程已删除')
+        await router.push('/')
+      } catch (error) {
+        message.error(`删除失败：${error instanceof Error ? error.message : '请稍后再试'}`)
+      }
+    }
+  })
+}
+
+async function submitRevision() {
+  const instruction = reviseInstruction.value.trim()
+  if (!instruction || !tripPlan.value?.id || revising.value) return
+
+  revising.value = true
+  reviseReply.value = ''
+  reviseError.value = ''
+  try {
+    const result = await reviseTripPlan(tripPlan.value.id, instruction)
+    tripPlan.value = result.plan
+    reviseReply.value = result.reply
+    reviseInstruction.value = ''
+    persistPlan()
+    void initMap()
+  } catch (error) {
+    reviseError.value = error instanceof Error ? error.message : '调整失败，请稍后再试'
+  } finally {
+    revising.value = false
+  }
 }
 
 async function loadPlanFromRoute() {
@@ -399,14 +523,25 @@ async function initMap() {
   }
 }
 
-async function exportAsImage() {
+async function capturePlanContent() {
   const element = document.getElementById('trip-plan-content')
-  if (!element || !tripPlan.value) return
+  if (!element || !tripPlan.value) return null
+  // html2canvas is heavy and only needed on export: load it on demand.
+  const { default: html2canvas } = await import('html2canvas')
   const visibleDays = [...expandedDayIndices.value]
   expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
   await nextTick()
-  const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
-  expandedDayIndices.value = visibleDays
+  try {
+    return await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
+  } finally {
+    expandedDayIndices.value = visibleDays
+  }
+}
+
+async function exportAsImage() {
+  if (!tripPlan.value) return
+  const canvas = await capturePlanContent()
+  if (!canvas) return
   const link = document.createElement('a')
   link.download = `${tripPlan.value.city}旅行计划.png`
   link.href = canvas.toDataURL('image/png')
@@ -414,13 +549,10 @@ async function exportAsImage() {
 }
 
 async function exportAsPDF() {
-  const element = document.getElementById('trip-plan-content')
-  if (!element || !tripPlan.value) return
-  const visibleDays = [...expandedDayIndices.value]
-  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
-  await nextTick()
-  const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
-  expandedDayIndices.value = visibleDays
+  if (!tripPlan.value) return
+  const canvas = await capturePlanContent()
+  if (!canvas) return
+  const { default: jsPDF } = await import('jspdf')
   const pdf = new jsPDF('p', 'mm', 'a4')
   const imgData = canvas.toDataURL('image/png')
   const imgWidth = 210

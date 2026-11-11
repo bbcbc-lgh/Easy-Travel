@@ -3,6 +3,8 @@ export interface Location {
   latitude: number
 }
 
+export type PriceSource = 'api' | 'estimated' | 'unknown'
+
 export interface Attraction {
   name: string
   address: string
@@ -13,6 +15,10 @@ export interface Attraction {
   rating?: number | null
   image_url?: string | null
   ticket_price: number
+  price_source: PriceSource
+  opening_hours?: string | null
+  contact_phone?: string | null
+  level?: string | null
   source: 'amap' | 'sample'
 }
 
@@ -23,6 +29,8 @@ export interface Meal {
   location?: Location | null
   description?: string | null
   estimated_cost: number
+  price_source: PriceSource
+  opening_hours?: string | null
   source: 'amap' | 'sample'
 }
 
@@ -35,6 +43,7 @@ export interface Hotel {
   distance: string
   type: string
   estimated_cost: number
+  price_source: PriceSource
   source: 'amap' | 'sample'
 }
 
@@ -106,6 +115,8 @@ export interface TripPlan {
   overall_suggestions: string
   budget?: Budget | null
   quality?: PlanQuality | null
+  degraded: boolean
+  degraded_reason?: string | null
   data_notices: string[]
 }
 

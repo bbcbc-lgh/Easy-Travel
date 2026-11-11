@@ -297,6 +297,84 @@ select:focus-visible,
   color: var(--clay-dark);
 }
 
+.loading-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.loading-summary strong {
+  font-size: 1rem;
+}
+
+.loading-elapsed {
+  font-size: 0.82rem;
+  color: var(--muted, #7a7166);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: var(--muted, #7a7166);
+}
+
+.stage-item small {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.stage-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d8d0c6;
+  flex: 0 0 auto;
+}
+
+.stage-item.active {
+  color: var(--clay-dark);
+  font-weight: 600;
+}
+
+.stage-item.active .stage-indicator {
+  background: var(--clay);
+  box-shadow: 0 0 0 4px rgba(196, 92, 56, 0.16);
+  animation: stage-pulse 1.4s ease-in-out infinite;
+}
+
+.stage-item.done {
+  color: var(--ink, #2f2a24);
+}
+
+.stage-item.done .stage-indicator {
+  background: #4c7a5a;
+}
+
+.loading-hint {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted, #7a7166);
+}
+
+@keyframes stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(196, 92, 56, 0.14); }
+  50% { box-shadow: 0 0 0 6px rgba(196, 92, 56, 0.08); }
+}
+
+
 .actions-row,
 .header-actions,
 .edit-buttons {
@@ -467,6 +545,32 @@ select:focus-visible,
 .data-notice {
   margin-top: 20px;
   border-radius: 4px;
+}
+
+.plan-source-tag {
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.config-hint {
+  margin-bottom: 18px;
+  border-radius: 4px;
+}
+
+.revise-block .revise-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.revise-block .revise-row .ant-input {
+  flex: 1 1 auto;
+}
+
+.revise-hint {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted, #7a7166);
 }
 
 .section-block {
@@ -713,6 +817,20 @@ select:focus-visible,
 
 .attraction-item small {
   color: #74827d;
+}
+
+.attraction-thumb {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.attraction-level {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .meal-list {
