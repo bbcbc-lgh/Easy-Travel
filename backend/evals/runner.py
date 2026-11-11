@@ -1,15 +1,15 @@
 """Runs the eval cases through the real planning pipeline and collects metrics."""
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from evals.judge import judge_plan
+from evals.metrics import CaseMetrics, measure
 from src.api.deps import TripPlanningPipeline
 from src.config import Settings
 from src.model.schemas import TripPlanRequest
-from evals.judge import judge_plan
-from evals.metrics import CaseMetrics, measure
 
 CASES_PATH = Path(__file__).with_name("cases.json")
 

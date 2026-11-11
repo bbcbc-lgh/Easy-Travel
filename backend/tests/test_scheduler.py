@@ -1,12 +1,10 @@
 from datetime import date
 
-import pytest
-
 from src.model.schemas import Attraction, Hotel, Location, Meal, TripPlanRequest
 from src.planning.scheduler import (
     build_days,
-    order_by_nearest_neighbour,
     optimise_order,
+    order_by_nearest_neighbour,
     pick_meals,
     route_distance,
 )

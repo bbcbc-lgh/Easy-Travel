@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 import src.service.amap as amap_module
 from src.api.deps import get_trip_plan_repository
 from src.config import Settings

@@ -180,10 +180,14 @@ npm run dev
 
 ```bash
 cd backend
-python -m pytest -q                 # 157 个测试，含离线模式
+pip install -r requirements-dev.txt
+ruff check src tests evals          # 后端 lint
+python -m pytest -q                 # 171 个测试，含离线模式
 python -m evals --mode sample       # 24 条 golden case 的离线评测基线
 python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
 cd ../frontend
+npm run lint                        # ESLint
+npm test                            # Vitest 单元测试
 npm run build                       # 类型检查 + 打包
 ```
 

@@ -1,6 +1,7 @@
-from fastapi.testclient import TestClient
 from unittest.mock import patch
+
 import pytest
+from fastapi.testclient import TestClient
 
 from src.agent.review_agent import ReviewAgent
 from src.api.deps import get_pipeline
@@ -9,7 +10,6 @@ from src.model.llm_profile import ModelProfile
 from src.model.schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
 from src.service.amap import AMapService
 from src.service.llm import LLMClient
-
 
 CLIENT_ID = "test-client-0001"
 

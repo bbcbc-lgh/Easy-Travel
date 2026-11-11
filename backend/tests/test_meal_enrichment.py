@@ -3,9 +3,8 @@ from datetime import date
 
 from src.api.deps import TripPlanningPipeline
 from src.config import Settings
-from src.planning.contracts import CandidatePlaces
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
-
+from src.planning.contracts import CandidatePlaces
 
 EMPTY_CANDIDATES = CandidatePlaces(attractions=[], hotels=[], meals=[], weather=[])
 

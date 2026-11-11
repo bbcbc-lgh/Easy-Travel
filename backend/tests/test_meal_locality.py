@@ -1,10 +1,8 @@
 import asyncio
 from datetime import date
 
-import pytest
-
-from src.agent.trip_planning_graph import TripPlanningGraph, _merge_meals
 from src.agent.review_agent import ReviewAgent
+from src.agent.trip_planning_graph import TripPlanningGraph, _merge_meals
 from src.config import Settings
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
 from src.planning.critic import PlanCritic

@@ -1,6 +1,5 @@
 from src.model.schemas import Attraction, Hotel, Location, Meal, WeatherInfo
 
-
 CITY_CENTERS: dict[str, Location] = {
     "北京": Location(longitude=116.397128, latitude=39.916527),
     "上海": Location(longitude=121.473701, latitude=31.230416),

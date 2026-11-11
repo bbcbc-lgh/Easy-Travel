@@ -10,7 +10,15 @@ from fastapi.responses import StreamingResponse
 from src.api.deps import TripPlanningPipeline, get_generation_guard, get_pipeline, get_trip_plan_repository
 from src.api.security import get_owner_id
 from src.config import settings
-from src.model.schemas import HealthResponse, PlanPatch, ReviseRequest, ReviseResponse, TripPlan, TripPlanRequest, TripPlanSummary
+from src.model.schemas import (
+    HealthResponse,
+    PlanPatch,
+    ReviseRequest,
+    ReviseResponse,
+    TripPlan,
+    TripPlanRequest,
+    TripPlanSummary,
+)
 from src.planning.reviser import PatchError
 from src.service.database import TripPlanRepository
 from src.service.generation_guard import GenerationGuard, QuotaExceededError, ServerBusyError

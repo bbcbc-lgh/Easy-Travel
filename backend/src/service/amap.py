@@ -9,8 +9,8 @@ import httpx
 
 from src.config import Settings
 from src.model.schemas import Attraction, Hotel, Location, Meal, RouteLeg, TripPlan, TripPlanRequest, WeatherInfo
-from src.service.logging import log_event
 from src.service.cache import TTLCache
+from src.service.logging import log_event
 from src.service.qweather import QWeatherService
 from src.service.sample_data import city_center, sample_attractions, sample_hotels, sample_meals, sample_weather
 
@@ -335,7 +335,7 @@ class AMapService:
                         request=request,
                     )
                         )
-                        for (origin_name, origin), (destination_name, destination) in zip(route_points, route_points[1:])
+                        for (origin_name, origin), (destination_name, destination) in zip(route_points, route_points[1:], strict=False)
                     ],
                 )
             )

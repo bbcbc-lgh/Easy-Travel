@@ -1,12 +1,10 @@
 import asyncio
 from datetime import date
 
-import pytest
-
 from src.config import Settings
 from src.model.schemas import TripPlanRequest
-from src.planning.rule_planner import RulePlanner
 from src.planning.contracts import CandidatePlaces
+from src.planning.rule_planner import RulePlanner
 from src.service.amap import AMapService
 from src.service.cache import TTLCache
 from src.service.sample_data import sample_attractions, sample_hotels, sample_meals, sample_weather

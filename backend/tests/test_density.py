@@ -1,6 +1,6 @@
 from datetime import date
 
-from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Location, Meal, TripPlan, TripPlanRequest
 from src.planning.critic import PlanCritic
 from src.planning.density import (
     DAILY_LOAD_LIMIT,

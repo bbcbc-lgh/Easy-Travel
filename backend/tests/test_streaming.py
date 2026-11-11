@@ -1,8 +1,5 @@
 import json
 
-import httpx
-import pytest
-
 
 def parse_events(body: str) -> list[dict]:
     events = []

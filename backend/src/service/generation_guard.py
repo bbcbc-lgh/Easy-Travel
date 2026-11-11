@@ -7,9 +7,9 @@ interface is what a Redis-backed implementation would expose later.
 import asyncio
 import logging
 import threading
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import AsyncIterator
 
 from src.config import Settings
 from src.service.logging import log_event

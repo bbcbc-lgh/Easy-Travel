@@ -54,7 +54,7 @@ def intra_day_distances(plan: TripPlan) -> list[float]:
     distances: list[float] = []
     for day in plan.days:
         total = 0.0
-        for previous, current in zip(day.attractions, day.attractions[1:]):
+        for previous, current in zip(day.attractions, day.attractions[1:], strict=False):
             total += haversine_meters(previous.location, current.location)
         distances.append(total)
     return distances

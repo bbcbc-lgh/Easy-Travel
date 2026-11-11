@@ -36,7 +36,7 @@ def _intra_day_meters(day: DayPlan) -> float:
     latter is what this measures.
     """
     total = 0.0
-    for previous, current in zip(day.attractions, day.attractions[1:]):
+    for previous, current in zip(day.attractions, day.attractions[1:], strict=False):
         total += haversine_meters(previous.location, current.location)
     return total
 

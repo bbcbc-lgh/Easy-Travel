@@ -1,6 +1,5 @@
 from datetime import date
 
-from src.config import Settings
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
 from src.planning.critic import PlanCritic
 from src.planning.hours import closed_weekdays, is_closed_on, weekday_name
