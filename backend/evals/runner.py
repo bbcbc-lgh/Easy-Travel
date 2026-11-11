@@ -1,0 +1,112 @@
+"""Runs the eval cases through the real planning pipeline and collects metrics."""
+
+import json
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+from src.api.deps import TripPlanningPipeline
+from src.config import Settings
+from src.model.schemas import TripPlanRequest
+from evals.judge import judge_plan
+from evals.metrics import CaseMetrics, measure
+
+CASES_PATH = Path(__file__).with_name("cases.json")
+
+
+@dataclass(slots=True)
+class EvalCase:
+    id: str
+    city: str
+    start_date: str
+    days: int
+    preferences: str
+    budget: str
+    transportation: str
+    accommodation: str
+
+    def to_request(self) -> TripPlanRequest:
+        return TripPlanRequest(
+            city=self.city,
+            start_date=date.fromisoformat(self.start_date),
+            days=self.days,
+            preferences=self.preferences,
+            budget=self.budget,
+            transportation=self.transportation,
+            accommodation=self.accommodation,
+        )
+
+
+@dataclass(slots=True)
+class EvalResult:
+    case: EvalCase
+    metrics: CaseMetrics
+    judge: dict | None = None
+    error: str | None = None
+
+
+def load_cases(path: Path | None = None, limit: int | None = None) -> list[EvalCase]:
+    raw = json.loads((path or CASES_PATH).read_text(encoding="utf-8"))
+    cases = [EvalCase(**item) for item in raw]
+    return cases[:limit] if limit else cases
+
+
+def build_pipeline(mode: str) -> TripPlanningPipeline:
+    """``sample`` runs fully offline; ``live`` uses the configured providers."""
+    return TripPlanningPipeline(Settings(use_sample_data=(mode == "sample")))
+
+
+async def run_case(
+    case: EvalCase,
+    pipeline: TripPlanningPipeline,
+    use_judge: bool = False,
+    offline: bool = False,
+) -> EvalResult:
+    request = case.to_request()
+    try:
+        plan = await pipeline.run(request)
+    except Exception as exc:  # noqa: BLE001 - a failed case is data, not a crash
+        return EvalResult(
+            case=case,
+            metrics=CaseMetrics(
+                case_id=case.id,
+                days=0,
+                degraded=True,
+                avg_intra_day_km=0.0,
+                max_intra_day_km=0.0,
+                duplicate_attractions=0,
+                day_structure_ok=False,
+                meals_complete_rate=0.0,
+                cap_violations=0,
+                price_estimated=0,
+                price_unknown=0,
+                preference_hit_rate=0.0,
+                budget_total=0,
+                reference_budget=0,
+                budget_deviation=0.0,
+                score=0.0,
+            ),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+    metrics = measure(case.id, plan, request, offline=offline)
+    verdict = None
+    if use_judge and not plan.degraded:
+        verdict = await judge_plan(pipeline.graph.planner_agent.llm_planner.gateway, plan)
+    return EvalResult(case=case, metrics=metrics, judge=verdict)
+
+
+async def run_all(
+    cases: list[EvalCase],
+    pipeline: TripPlanningPipeline,
+    use_judge: bool = False,
+    offline: bool = False,
+    on_progress=None,
+) -> list[EvalResult]:
+    results: list[EvalResult] = []
+    for index, case in enumerate(cases):
+        result = await run_case(case, pipeline, use_judge, offline=offline)
+        results.append(result)
+        if on_progress is not None:
+            on_progress(result, index, len(cases))
+    return results
