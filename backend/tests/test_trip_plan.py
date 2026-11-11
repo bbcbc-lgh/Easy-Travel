@@ -2,40 +2,48 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 import pytest
 
-from src.Agent.ReviewAgent import ReviewAgent
-from src.API.Deps import get_pipeline
-from src.API.Main import app
-from src.Config import Settings
-from src.Model.Schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
-from src.Service.AMap import AMapService
-from src.Service.LLM import LLMService
+from src.agent.review_agent import ReviewAgent
+from src.api.deps import get_pipeline
+from src.api.main import app
+from src.model.llm_profile import ModelProfile
+from src.model.schemas import Attraction, DayPlan, Location, TripPlan, TripPlanRequest
+from src.service.amap import AMapService
+from src.service.llm import LLMClient
 
 
-client = TestClient(app)
+CLIENT_ID = "test-client-0001"
+
+
+class OwnedClient(TestClient):
+    """TestClient that always presents an anonymous owner id."""
+
+    def request(self, *args, **kwargs):
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers.setdefault("X-Client-Id", CLIENT_ID)
+        return super().request(*args, headers=headers, **kwargs)
+
+
+client = OwnedClient(app)
 
 
 @pytest.fixture(autouse=True)
 def use_sample_data_for_api_tests() -> None:
     get_pipeline.cache_clear()
-    with patch("src.API.Deps.settings.use_sample_data", True):
+    with patch("src.api.deps.settings.use_sample_data", True):
         yield
     get_pipeline.cache_clear()
 
 
-def test_llm_service_disables_retries_for_fast_fallback() -> None:
-    settings = Settings(
-        llm_api_key="test-key",
-        llm_base_url="https://example.test",
-        use_sample_data=False,
-    )
+def test_llm_client_uses_profile_timeout_and_no_sdk_retries() -> None:
+    profile = ModelProfile(name="deepseek-flash", timeout_seconds=120.0)
 
-    with patch("src.Service.LLM.AsyncOpenAI") as mock_client:
-        LLMService(settings)
+    with patch("src.service.llm.AsyncOpenAI") as mock_client:
+        LLMClient(profile, api_key="test-key", base_url="https://example.test")
 
     mock_client.assert_called_once_with(
         api_key="test-key",
         base_url="https://example.test",
-        timeout=8,
+        timeout=120.0,
         max_retries=0,
     )
 
@@ -69,6 +77,12 @@ def test_create_trip_plan_with_fallback_data() -> None:
     assert payload["days"][0]["attractions"]
     assert payload["quality"]["score"] > 0
     assert payload["id"]
+    # Sample/offline mode never calls the model, so the plan must say so.
+    assert payload["degraded"] is True
+    assert payload["degraded_reason"]
+    assert payload["quality"]["score"] <= 60
+    assert payload["quality"]["checks"]["planned_by_model"] is False
+    assert any("规则引擎" in warning for warning in payload["quality"]["warnings"])
 
 
 def test_saved_trip_plan_can_be_loaded_and_listed() -> None:
@@ -89,7 +103,11 @@ def test_saved_trip_plan_can_be_loaded_and_listed() -> None:
 
     load_response = client.get(f"/api/trip/plans/{plan_id}")
     assert load_response.status_code == 200
-    assert load_response.json()["city"] == "杭州"
+    loaded = load_response.json()
+    assert loaded["city"] == "杭州"
+    assert loaded["degraded"] is True
+    assert loaded["degraded_reason"]
+    assert loaded["quality"]["checks"]["planned_by_model"] is False
 
     list_response = client.get("/api/trip/plans?limit=5")
     assert list_response.status_code == 200
