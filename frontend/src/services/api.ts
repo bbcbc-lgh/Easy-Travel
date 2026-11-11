@@ -2,7 +2,10 @@ import axios from 'axios'
 
 import type { TripPlan, TripPlanRequest, TripPlanSummary } from '../types/trip'
 
-const defaultApiBaseUrl = 'http://localhost:8000/api'
+// Same-origin by default: the SPA is served either by Vite (which proxies /api
+// to the backend) or by FastAPI itself, so a hard-coded localhost:8000 breaks
+// custom ports and LAN access.
+const defaultApiBaseUrl = `${window.location.origin}/api`
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl
 const clientIdKey = 'easyTravel.clientId'
 

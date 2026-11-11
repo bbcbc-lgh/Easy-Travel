@@ -7,6 +7,7 @@
         </div>
         <p class="eyebrow">EasyTravel</p>
         <h1>从一份清楚的旅行需求开始</h1>
+        <router-link class="history-link" to="/plans">查看历史行程 →</router-link>
       </header>
 
       <section class="form-card" aria-label="旅行规划表单">
@@ -241,7 +242,7 @@ async function handleSubmit() {
         onPlan: (plan: TripPlan) => {
           finished = true
           sessionStorage.setItem('tripPlan', JSON.stringify(plan))
-          void router.push(plan.id ? { name: 'shared-result', params: { id: plan.id } } : { name: 'result' })
+          void router.push(plan.id ? { name: 'plan-detail', params: { id: plan.id } } : { name: 'result' })
         },
         onError: (detail: string) => {
           failure = detail

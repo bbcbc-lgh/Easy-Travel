@@ -965,6 +965,148 @@ select:focus-visible,
   text-align: center;
 }
 
+.not-found-hint {
+  margin: 0;
+  color: #74827d;
+  font-size: 15px;
+}
+
+.history-link {
+  display: inline-block;
+  margin-top: 18px;
+  color: var(--jade-dark);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.history-link:hover {
+  text-decoration: underline;
+}
+
+.history-shell {
+  min-height: 100dvh;
+  padding: 48px 24px 64px;
+  background: #edf1ed;
+}
+
+.history-header {
+  display: flex;
+  max-width: 880px;
+  margin: 0 auto 26px;
+  align-items: center;
+  gap: 18px;
+}
+
+.history-title {
+  flex: 1;
+}
+
+.history-title .eyebrow {
+  margin: 0 0 4px;
+  color: #74827d;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.history-title h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+}
+
+.history-count {
+  color: #74827d;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-alert {
+  max-width: 880px;
+  margin: 0 auto 18px;
+  border-radius: 4px;
+}
+
+.history-empty {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 40px 0;
+  color: #74827d;
+  text-align: center;
+}
+
+.history-empty p {
+  margin: 0 0 16px;
+}
+
+.history-list {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 16px 20px;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-main {
+  display: grid;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  gap: 4px;
+  text-align: left;
+}
+
+.history-main strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.history-main span {
+  color: #74827d;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-main:hover strong {
+  color: var(--jade-dark);
+}
+
+.history-updated {
+  color: #9aa5a1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .history-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .history-updated {
+    display: none;
+  }
+}
+
 @media (min-width: 981px) {
   .planner-layout {
     grid-template-columns: 43% 57%;

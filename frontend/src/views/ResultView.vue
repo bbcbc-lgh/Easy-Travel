@@ -310,7 +310,14 @@ let mapInstance: { destroy: () => void } | null = null
 
 function loadInitialPlan(): TripPlan | null {
   const cached = sessionStorage.getItem('tripPlan')
-  return cached ? (JSON.parse(cached) as TripPlan) : null
+  if (!cached) return null
+  try {
+    return JSON.parse(cached) as TripPlan
+  } catch {
+    // A stale or truncated cache must not blank the page; drop it and refetch.
+    sessionStorage.removeItem('tripPlan')
+    return null
+  }
 }
 
 function scrollToSection({ key }: { key: string }) {
