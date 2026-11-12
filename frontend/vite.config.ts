@@ -3,6 +3,12 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [vue()],
+  optimizeDeps: {
+    // Both are imported lazily on export. Left out, the dev server discovers them
+    // on first use and reloads the page - which is a surprising thing to have
+    // happen while you are reading a plan.
+    include: ['html2canvas', 'jspdf']
+  },
   server: {
     port: 5173,
     // Playwright writes traces and results while the dev server is running; with

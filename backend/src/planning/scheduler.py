@@ -23,12 +23,21 @@ MEAL_COST_CAP: dict[str, dict[str, int]] = {
 }
 
 # Venues that make no sense for breakfast; used to keep 烧肉/火锅 out of the morning.
+# Real run: day 3 was offered "鱼蛙兄弟美蛙鱼" (a spicy fish hotpot) as breakfast,
+# because the list only knew the generic words.
 NON_BREAKFAST_TERMS = (
     "烧肉",
     "烤肉",
     "火锅",
     "放题",
     "自助",
+    "美蛙",
+    "鱼蛙",
+    "干锅",
+    "烧椒",
+    "烤鱼",
+    "冒菜",
+    "串串",
     "日料",
     "寿喜",
     "海鲜",

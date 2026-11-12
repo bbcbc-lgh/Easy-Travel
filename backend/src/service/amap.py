@@ -32,6 +32,20 @@ logger = logging.getLogger(__name__)
 MAX_POI_PAGES = 2
 POI_PAGE_SIZE = 20
 
+# Scenic-ish POI types: 风景名胜 / 公园广场 / 旅游景点 / 科教文化 / 博物馆.
+ATTRACTION_TYPES = "110000|110100|110200|140000|140100"
+# 购物服务. Fetched only when the user asked to shop: a mall is a destination in
+# its own right ("one mall fills half a day"), but it is not a sightseeing stop for
+# someone who asked for history.
+SHOPPING_TYPES = "060000"
+SHOPPING_PREFERENCE_TERMS = ("购物", "逛街", "商场", "购物中心", "买", "市集")
+SHOPPING_KEYWORDS = ("购物中心", "商场", "百货", "万达广场", "万象城")
+SHOPPING_CATEGORY_TERMS = ("购物中心", "商场", "百货", "商业街")
+# Share of the candidate list a shopping stop may take. Without a cap, adding
+# malls swapped one monotony for another: a real run returned five malls over three
+# days and nothing else.
+SHOPPING_CANDIDATE_SHARE = 0.4
+
 
 class AMapService:
     def __init__(self, settings: Settings):
@@ -71,7 +85,7 @@ class AMapService:
             pois = await self._search_pois(
                 city=request.city,
                 keywords=self._build_attraction_keywords(request),
-                types="110000|110100|110200|140000|140100",
+                types=self._attraction_types(request),
                 target_count=target_count * 2,
             )
         except httpx.HTTPError as exc:
@@ -88,8 +102,11 @@ class AMapService:
 
         attractions: list[Attraction] = []
         seen_names: set[str] = set()
+        allow_shopping = self._wants_shopping(request)
+        shopping_cap = self._shopping_cap(target_count) if allow_shopping else 0
+        shopping_taken = 0
         for poi in pois:
-            if not self._is_attraction_poi(poi):
+            if not self._is_attraction_poi(poi, allow_shopping=allow_shopping):
                 continue
             name = self._text(poi.get("name"), "未命名景点")
             if self._looks_like_non_attraction_name(name):
@@ -100,8 +117,13 @@ class AMapService:
             location = self._poi_location(poi)
             if location is None:
                 continue
+            category = AMapService._poi_category(poi) or "景点"
+            if "购物服务" in category:
+                # Malls are welcome, but not at the price of an all-mall trip.
+                if shopping_taken >= shopping_cap:
+                    continue
+                shopping_taken += 1
             seen_names.add(normalized_name)
-            category = self._poi_category(poi) or "景点"
             ticket_price, price_source = self._ticket_price(category)
             attractions.append(
                 Attraction(
@@ -204,7 +226,11 @@ class AMapService:
                 city=request.city,
                 keywords=self._build_food_keywords(request),
                 types="050000",
-                target_count=max(12, request.days * 3),
+                # Eight candidates per day, not three: nine meal slots are drawn
+                # from this pool, and filters (breakfast suitability, cost cap,
+                # walking radius) remove most of it. With twelve, a real three-day
+                # plan ran out of breakfast on the last day.
+                target_count=max(24, request.days * 8),
             )
         except httpx.HTTPError as exc:
             log_event(
@@ -469,9 +495,16 @@ class AMapService:
     ) -> list[dict[str, Any]]:
         pois: list[dict[str, Any]] = []
         seen: set[str] = set()
+        keyword_list = list(keywords)
+        # Breadth before depth. Without a per-keyword slice the first keyword fills
+        # the target by itself and the rest are never searched - which is how a
+        # shopping trip came back with nothing but malls, and how a meal search
+        # filled up on 火锅 places before any breakfast shop was asked for.
+        per_keyword = max(3, -(-target_count // max(1, len(keyword_list))))
         try:
             async with asyncio.timeout(8):
-                for keyword in keywords:
+                for keyword in keyword_list:
+                    from_keyword = 0
                     page = 1
                     while page <= MAX_POI_PAGES:
                         results: list[dict[str, Any]] = []
@@ -501,9 +534,12 @@ class AMapService:
                                 continue
                             seen.add(identity)
                             pois.append(poi)
+                            from_keyword += 1
                             if len(pois) >= target_count:
                                 return pois
-                        if len(results) < POI_PAGE_SIZE:
+                            if from_keyword >= per_keyword:
+                                break
+                        if from_keyword >= per_keyword or len(results) < POI_PAGE_SIZE:
                             break
                         page += 1
         except TimeoutError:
@@ -750,7 +786,27 @@ class AMapService:
             f"{request.city} {part}" for part in preference_parts if not AMapService._is_meal_preference(part)
         ]
         keywords = [*preference_keywords, *base_keywords]
+        if AMapService._wants_shopping(request):
+            # "贵阳 购物" matches shops, not malls; these are the names a shopper
+            # actually searches for, and a mall comes back as one POI.
+            keywords.extend(f"{request.city} {term}" for term in SHOPPING_KEYWORDS)
         return list(dict.fromkeys(keywords))
+
+    @staticmethod
+    def _shopping_cap(target_count: int) -> int:
+        """How many shopping stops the candidate list may contain."""
+        return max(1, round(target_count * SHOPPING_CANDIDATE_SHARE))
+
+    @staticmethod
+    def _wants_shopping(request: TripPlanRequest) -> bool:
+        return any(term in request.preferences for term in SHOPPING_PREFERENCE_TERMS)
+
+    @staticmethod
+    def _attraction_types(request: TripPlanRequest) -> str:
+        """POI types to search, widened to shopping only when the user asked for it."""
+        if AMapService._wants_shopping(request):
+            return f"{ATTRACTION_TYPES}|{SHOPPING_TYPES}"
+        return ATTRACTION_TYPES
 
     @staticmethod
     def _build_hotel_keywords(request: TripPlanRequest) -> list[str]:
@@ -770,6 +826,8 @@ class AMapService:
         return list(
             dict.fromkeys(
                 [
+                    f"{request.city} 早餐",
+                    f"{request.city} 早点",
                     f"{request.city} 美食",
                     f"{request.city} 特色餐厅",
                     f"{request.city} 小吃",
@@ -792,12 +850,18 @@ class AMapService:
         return "".join(name.lower().split())
 
     @staticmethod
-    def _is_attraction_poi(poi: dict[str, Any]) -> bool:
+    def _is_attraction_poi(poi: dict[str, Any], allow_shopping: bool = False) -> bool:
+        """Whether a POI may be offered as a stop.
+
+        ``allow_shopping`` is off unless the user asked to shop: a mall can fill
+        half a day, but only if that is what the trip is about. Supermarkets and
+        single shops stay out either way - the category has to name a mall, a
+        department store or a commercial street.
+        """
         category = AMapService._poi_category(poi)
         forbidden_categories = (
             "餐饮服务",
             "住宿服务",
-            "购物服务",
             "生活服务",
             "商务住宅",
             "公司企业",
@@ -806,6 +870,10 @@ class AMapService:
         )
         if any(item in category for item in forbidden_categories):
             return False
+
+        if "购物服务" in category:
+            return allow_shopping and any(item in category for item in SHOPPING_CATEGORY_TERMS)
+
         attraction_categories = ("风景名胜", "公园广场", "博物馆", "美术馆", "展览馆", "纪念馆", "图书馆")
         return any(item in category for item in attraction_categories)
 
@@ -937,6 +1005,9 @@ class AMapService:
 
     @staticmethod
     def _estimate_visit_duration(category: str, name: str) -> int:
+        # A mall is a half-day in itself: shops, food, cinema, all under one roof.
+        if any(item in category for item in SHOPPING_CATEGORY_TERMS) or "万达" in name:
+            return 150
         if "博物馆" in category or "艺术" in name:
             return 120
         if "公园" in category or "风景" in category:
