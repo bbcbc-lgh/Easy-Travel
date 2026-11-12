@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 backend/.venv/
 backend/__pycache__/
 backend/.pytest_cache/
@@ -19,6 +19,9 @@ frontend/test-results/
 
 # Local working notes (not for version control)
 outputs/
+
+# Reports written by the manual live-eval workflow
+backend/live-eval.md
 
 # Coverage output
 .coverage

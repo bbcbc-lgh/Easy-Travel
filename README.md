@@ -298,6 +298,33 @@ python -m evals --mode live --limit 5 --min-usable-ratio 0.8
 运行后**先看 `degraded` 那一行**：如果 5 次全部降级，说明模型没调通，这次测到的还是
 规则引擎，可用率 100% 并不能说明模型的表现。
 
+### 在 GitHub 上手动触发（不用本地配环境）
+
+仓库里有一个手动 workflow：`.github/workflows/live-eval.yml`。点 **Actions → Live eval → Run workflow** 即可，
+可以在输入框里改用例数、可用率下限、允许的降级比例，以及是否加 LLM 评审。
+
+首次使用需要在仓库设置里配四个值：
+
+| 类型 | 名称 | 值 |
+|---|---|---|
+| Secret | `LLM_API_KEY` | 你的模型密钥 |
+| Secret | `AMAP_WEB_KEY` | 高德 Web 服务 Key |
+| Variable | `LLM_BASE_URL` | 例如 `https://api.deepseek.com` |
+| Variable | `LLM_MODEL` | 例如 `deepseek-chat` |
+
+用命令行配（会提示你粘贴，值不会进 shell 历史）：
+
+```bash
+gh secret set LLM_API_KEY
+gh secret set AMAP_WEB_KEY
+gh variable set LLM_BASE_URL
+gh variable set LLM_MODEL
+```
+
+跑完在 run 页面直接能看到报告摘要；完整报告在 artifact `live-eval-report` 里。
+配置缺失时它会在第一步就带一句明确提示失败，而不是跑出一份"降级率 100% 但可用率 100%"的假结果。
+
+
 > 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 
 ### 目录结构

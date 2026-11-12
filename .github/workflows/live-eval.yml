@@ -1,0 +1,103 @@
+name: Live eval
+
+# Manual, because it spends real money: a full run is `limit` real plan
+# generations against whatever model the repository is configured with. Run it
+# when a prompt, the scheduler or the model changes, and read the usable ratio.
+#
+# Needs, in the repository settings:
+#   secrets  LLM_API_KEY, AMAP_WEB_KEY
+#   variables LLM_BASE_URL, LLM_MODEL
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many golden cases to run"
+        required: false
+        default: "5"
+      min_usable_ratio:
+        description: "Fail when fewer than this share of plans can be followed as written"
+        required: false
+        default: "0.8"
+      max_degraded_ratio:
+        description: "Fail when more than this share fell back to the rule planner (the model never answered)"
+        required: false
+        default: "0.2"
+      judge:
+        description: "Also run the LLM-as-judge pass (one more model call per case)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-eval
+  cancel-in-progress: false
+
+jobs:
+  live-eval:
+    name: live eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # Fail with a sentence instead of a stream of auth errors: a run configured
+      # with a missing key silently degrades to the rule planner and then reports
+      # 100% usable, which is the one result that would be actively misleading.
+      - name: Check configuration
+        run: |
+          missing=""
+          for name in LLM_API_KEY AMAP_WEB_KEY LLM_BASE_URL LLM_MODEL; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing configuration:$missing"
+            echo "Set LLM_API_KEY and AMAP_WEB_KEY as repository secrets, LLM_BASE_URL and LLM_MODEL as repository variables."
+            exit 1
+          fi
+          echo "model: $LLM_MODEL via $LLM_BASE_URL"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Run live eval
+        run: |
+          .venv/bin/python -m evals --mode live \
+            --limit "${{ inputs.limit }}" \
+            --min-usable-ratio "${{ inputs.min_usable_ratio }}" \
+            --max-degraded-ratio "${{ inputs.max_degraded_ratio }}" \
+            ${{ inputs.judge && '--judge' || '' }} \
+            --out live-eval.md
+
+      # The report is written before the gate decides, so it exists even when the
+      # run fails - that is exactly when it is worth reading.
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f live-eval.md ]; then cat live-eval.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-eval-report
+          path: backend/live-eval.md
+          if-no-files-found: warn
+          retention-days: 30
