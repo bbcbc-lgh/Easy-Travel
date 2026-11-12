@@ -66,10 +66,14 @@ jobs:
       - name: Run tests
         run: .venv/bin/python -m pytest -q
 
-      # A floor, not a target: the baseline is 72.3, so a real regression fails the
-      # build while normal noise does not. Raising it means improving the planner.
+      # Two floors, two different questions: how good the itineraries are, and
+      # whether a traveller could follow them as written. Offline the second one is
+      # 100% by construction (the rule planner is deterministic geometry), so it
+      # guards against structural regressions - the meaningful run is --mode live.
       - name: Offline itinerary eval baseline
-        run: .venv/bin/python -m evals --mode sample --min-score 70 --max-errors 0
+        run: >
+          .venv/bin/python -m evals --mode sample
+          --min-score 70 --max-errors 0 --min-usable-ratio 1.0
 
   frontend:
     name: frontend

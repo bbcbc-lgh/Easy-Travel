@@ -210,8 +210,8 @@ python -m pyright                   # 类型检查（0 错误）
 pip-audit -r requirements.txt       # 依赖漏洞
 pip check                           # 依赖一致性
 python -m pytest -q                 # 185 个测试 + 覆盖率（当前 81%）
-python -m evals --mode sample       # 24 条 golden case 的离线评测基线（当前 mean ≈ 72）
-python -m evals --mode live --judge --limit 1   # 真实模型 + LLM 评审
+python -m evals --mode sample       # 24 条 golden case 的离线基线（mean ≈ 72，可用率 100%）
+python -m evals --mode live --limit 3 --judge   # 真实模型；只有这条能测出模型的真实可用性
 cd ../frontend
 npm run lint                        # ESLint（含类型感知与无障碍规则）
 npm run lint:style                  # stylelint
@@ -253,6 +253,29 @@ CI 里用的是官方 CDN，所以 `--with-deps` 那套只在 CI 需要。
 | 自动升级 | Dependabot（pip / npm / actions） | 同左 |
 
 覆盖率**只测量不设门槛**：数字用来定位该补哪里，不当作"代码对不对"的证明。
+
+### 评测里的两把尺子
+
+`evals` 回答两个不同的问题，都有独立门禁：
+
+| 尺子 | 问题 | 门禁 |
+|---|---|---|
+| 综合分 | 行程**好不好**（动线、约束、偏好、预算加权） | CI：`--min-score 70` |
+| **可用率** | 打印出来**能不能直接照着走** | CI：`--min-usable-ratio 1.0` |
+
+可用率复用应用自身的阈值逐天检查 8 件事：有没有景点、景点间移动是否超 20 公里、
+游览时长是否超 7 小时、单日强度是否超上限、三餐是否齐全、餐费是否超预算档位、
+当天有没有闭馆、有没有重复景点。**不调用模型，不花钱**，所以每次 push 都跑。
+
+需要知道的一点：**离线模式（`--mode sample`）下可用率恒为 100%** —— 因为规则引擎
+本身就是确定性几何，排不出走不通的行程。所以 CI 那条是"结构回归守门员"，真正的
+可用性测量要看模型：
+
+```bash
+python -m evals --mode live --limit 5 --min-usable-ratio 0.8
+```
+
+这一步会花钱（5 次真实生成），但它是唯一能回答"AI 排出来的行程能不能直接用"的命令。
 
 > 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 
