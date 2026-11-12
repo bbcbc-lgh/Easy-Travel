@@ -199,10 +199,26 @@ python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 
 ---
 
+**`ModuleNotFoundError: No module named 'pydantic'`？**
+你用系统 Python 跑了。项目依赖都装在 `backend/.venv` 里，先进虚拟环境：
+
+```powershell
+cd backend
+.venv\Scripts\Activate.ps1      # Windows
+source .venv/bin/activate       # macOS / Linux
+```
+
+或者不用激活，直接指定解释器：`.venv\Scripts\python -m evals ...`（macOS/Linux：`.venv/bin/python -m evals ...`）。
+下面的开发命令都假定已经激活。
+
+---
+
 ## 开发与测试
 
 ```bash
 cd backend
+python -m venv .venv                # 首次；scripts/dev.ps1 已经建过就跳过
+.venv\Scripts\Activate.ps1          # Windows（macOS / Linux：source .venv/bin/activate）
 pip install -r requirements-dev.txt
 ruff check src tests evals          # 后端 lint（含 flake8-bandit 安全规则）
 ruff format --check src tests evals # 格式检查
@@ -276,6 +292,8 @@ python -m evals --mode live --limit 5 --min-usable-ratio 0.8
 ```
 
 这一步会花钱（5 次真实生成），但它是唯一能回答"AI 排出来的行程能不能直接用"的命令。
+运行后**先看 `degraded` 那一行**：如果 5 次全部降级，说明模型没调通，这次测到的还是
+规则引擎，可用率 100% 并不能说明模型的表现。
 
 > 离线基线在 2026-11 从 85.9 降到 72.3，原因是修掉了一个指标缺陷：偏好命中率原本会把景点描述里的文字也算进去，而样例数据会把偏好串原样回显到描述里，于是"关键词出现了"被当成"行程符合偏好"。数字变低是尺子变准了——规则引擎用的是通用模板，本来就不该拿高分。判据写在 `outputs/平台化升级指导书.md` 的 ADR-6。
 
