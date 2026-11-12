@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   degradedReasonLabel,
   formatDistance,
-  mealTypeLabel,
   moveItem,
   nightsFor,
   priceText,
@@ -32,12 +31,6 @@ describe('formatDistance', () => {
 })
 
 describe('labels', () => {
-  it('maps meal types and falls back for unknown ones', () => {
-    expect(mealTypeLabel('breakfast')).toBe('早餐')
-    expect(mealTypeLabel('dinner')).toBe('晚餐')
-    expect(mealTypeLabel('brunch')).toBe('餐饮')
-  })
-
   it('maps weather sources, treating unknown ones as unavailable', () => {
     expect(weatherSourceLabel('qweather')).toBe('和风天气')
     expect(weatherSourceLabel('unavailable')).toBe('暂无预报')

@@ -56,7 +56,7 @@ class ScriptedPlanner:
         self.calls = 0
         self.feedbacks: list[list[str] | None] = []
 
-    async def run(self, req, attractions, hotels, weather, meals=None, feedback=None):
+    async def run(self, req, attractions, hotels, weather, feedback=None):
         self.feedbacks.append(feedback)
         plan = self.plans[min(self.calls, len(self.plans) - 1)]
         self.calls += 1
@@ -102,7 +102,6 @@ def build_graph(planner: ScriptedPlanner, max_revisions: int) -> TripPlanningGra
         attraction_agent=StubAgent([]),
         weather_agent=StubAgent([]),
         hotel_agent=StubAgent([]),
-        meal_agent=StubAgent([]),
         planner_agent=planner,
         review_agent=ReviewAgent(),
         amap_service=StubAMap(),

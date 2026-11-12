@@ -94,20 +94,6 @@ def test_critic_accepts_a_distant_but_coherent_day_trip() -> None:
     assert critique.needs_revision is False
 
 
-def test_critic_reports_meal_over_budget_as_a_note() -> None:
-    plan = plan_with(
-        meals=[meal("日料放题", 441, "lunch")],
-        attractions=[attraction("A"), attraction("B", 120.151, 30.271)],
-    )
-
-    critique = PlanCritic().review(request(budget="经济"), plan)
-
-    # The model cannot change scheduler-chosen meals, so this must not cost a retry.
-    assert critique.needs_revision is False
-    assert critique.notes
-    assert any("上限" in note for note in critique.notes)
-
-
 def test_critic_flags_a_day_without_attractions() -> None:
     plan = plan_with(meals=[], attractions=[])
 

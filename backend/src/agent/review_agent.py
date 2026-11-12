@@ -1,4 +1,4 @@
-from src.model.schemas import Attraction, Hotel, Meal, PlanQuality, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, Hotel, PlanQuality, TripPlan, TripPlanRequest
 from src.planning.budget import calculate_budget
 
 
@@ -53,20 +53,7 @@ class ReviewAgent:
                 f"\u7b2c {', '.join(map(str, sparse_days))} \u5929\u666f\u70b9\u5b89\u6392\u504f\u5c11\uff0c\u5efa\u8bae\u8865\u5145\u4e3a\u534a\u5929\u4f11\u95f2\u3001\u7279\u8272\u4f53\u9a8c\u6216\u8c03\u6574\u65c5\u884c\u5929\u6570\u3002"
             )
 
-        unnamed_meal_days = [
-            day.day_index + 1
-            for day in plan.days
-            if len(day.meals) != 3 or any(not meal.address or meal.source == "sample" for meal in day.meals)
-        ]
-        checks["meals_are_specific"] = not unnamed_meal_days
-        if unnamed_meal_days:
-            warnings.append(
-                f"\u7b2c {', '.join(map(str, unnamed_meal_days))} \u5929\u7684\u9910\u996e\u7f3a\u5c11\u53ef\u5bfc\u822a\u7684\u5e97\u540d\u6216\u5730\u5740\uff0c\u6682\u4e0d\u5efa\u8bae\u636e\u6b64\u51fa\u884c\u3002"
-            )
-
-        sample_places = [
-            item for day in plan.days for item in [*day.attractions, *day.meals] if item.source == "sample"
-        ]
+        sample_places: list[object] = [item for day in plan.days for item in day.attractions if item.source == "sample"]
         sample_places.extend(day.hotel for day in plan.days if day.hotel and day.hotel.source == "sample")
         checks["place_data_is_live"] = not sample_places
         if sample_places:
@@ -99,7 +86,6 @@ class ReviewAgent:
         if candidate_count is not None and not checks["enough_candidates"]:
             score -= 10
         score -= len(sparse_days) * 8
-        score -= len(unnamed_meal_days) * 8
         if sample_places:
             score -= 18
         score -= min(unknown_count * 4, 16)
@@ -117,9 +103,8 @@ class ReviewAgent:
     @staticmethod
     def _price_provenance(plan: TripPlan) -> tuple[int, int]:
         attractions: list[Attraction] = [item for day in plan.days for item in day.attractions]
-        meals: list[Meal] = [item for day in plan.days for item in day.meals]
         hotels: list[Hotel] = [day.hotel for day in plan.days if day.hotel]
-        items = [*attractions, *meals, *hotels]
+        items = [*attractions, *hotels]
         estimated = sum(1 for item in items if item.price_source == "estimated")
         unknown = sum(1 for item in items if item.price_source == "unknown")
         return estimated, unknown

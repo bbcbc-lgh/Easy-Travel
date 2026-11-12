@@ -1,11 +1,11 @@
 import logging
 from datetime import timedelta
 
-from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
+from src.model.schemas import DayPlan, Meal, TripPlan, TripPlanRequest
 from src.planning.budget import calculate_budget
 from src.planning.contracts import CandidatePlaces
 from src.planning.density import DAILY_LOAD_LIMIT, attraction_load
-from src.planning.scheduler import build_days, enforce_load, pick_meals
+from src.planning.scheduler import build_days, enforce_load
 from src.service.logging import log_event
 
 logger = logging.getLogger(__name__)
@@ -29,10 +29,9 @@ class RulePlanner:
         groups = build_days(candidates.attractions, request.days, anchor)
         groups = enforce_load(groups, attraction_load, DAILY_LOAD_LIMIT)
 
-        used_meal_keys: set[str] = set()
         days: list[DayPlan] = []
         for day_index, group in enumerate(groups):
-            meals = pick_meals(candidates.meals, request, hotel, group, used_meal_keys)
+            meals: list[Meal] = []  # plans no longer carry restaurants; see README
             if group:
                 names = "、".join(item.name for item in group)
                 description = f"第 {day_index + 1} 天按距离就近安排 {names}，减少往返，余下时间留给周边慢行。"

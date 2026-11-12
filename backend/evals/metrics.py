@@ -185,12 +185,11 @@ def composite_score(metrics: CaseMetrics, offline: bool = False) -> float:
     geo = 1 / (1 + metrics.avg_intra_day_km / 10)
     constraint = (
         (1.0 if metrics.day_structure_ok else 0.0)
-        + metrics.meals_complete_rate
         + (1 - min(metrics.cap_violations / 3, 1.0))
         # A repeated stop is a defect no amount of good geometry excuses, so it
         # must not be able to score full marks on the constraint axis.
         + (1.0 if metrics.duplicate_attractions == 0 else 0.0)
-    ) / 4
+    ) / 3
     preference = metrics.preference_hit_rate
     budget = 1 / (1 + metrics.budget_deviation)
 

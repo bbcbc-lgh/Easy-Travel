@@ -8,15 +8,12 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agent.attraction_agent import AttractionSearchAgent
 from src.agent.hotel_agent import HotelAgent
-from src.agent.meal_agent import MealAgent
 from src.agent.planner_agent import PlannerAgent
 from src.agent.review_agent import ReviewAgent
 from src.agent.weather_agent import WeatherQueryAgent
-from src.model.schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
-from src.planning.budget import calculate_budget
+from src.model.schemas import Attraction, Hotel, TripPlan, TripPlanRequest, WeatherInfo
 from src.planning.critic import PlanCritic, attach_critique
 from src.planning.density import trim_days_to_load
-from src.planning.scheduler import pick_meals
 from src.service.amap import AMapService
 from src.service.logging import log_event
 
@@ -36,7 +33,6 @@ class TripPlanningState(TypedDict, total=False):
     attractions: list[Attraction]
     weather_info: list[WeatherInfo]
     hotels: list[Hotel]
-    meals: list[Meal]
     plan: TripPlan
     candidate_count: int
     feedback: list[str]
@@ -70,7 +66,6 @@ class TripPlanningGraph:
         attraction_agent: AttractionSearchAgent,
         weather_agent: WeatherQueryAgent,
         hotel_agent: HotelAgent,
-        meal_agent: MealAgent,
         planner_agent: PlannerAgent,
         review_agent: ReviewAgent,
         amap_service: AMapService,
@@ -80,7 +75,6 @@ class TripPlanningGraph:
         self.attraction_agent = attraction_agent
         self.weather_agent = weather_agent
         self.hotel_agent = hotel_agent
-        self.meal_agent = meal_agent
         self.planner_agent = planner_agent
         self.review_agent = review_agent
         self.amap_service = amap_service
@@ -92,14 +86,12 @@ class TripPlanningGraph:
         builder = StateGraph(TripPlanningState)
         builder.add_node("collect_candidates", self._collect_candidates)
         builder.add_node("create_plan", self._create_plan)
-        builder.add_node("enrich_meals", self._enrich_meals)
         builder.add_node("enrich_routes", self._enrich_routes)
         builder.add_node("review_plan", self._review_plan)
 
         builder.add_edge(START, "collect_candidates")
         builder.add_edge("collect_candidates", "create_plan")
-        builder.add_edge("create_plan", "enrich_meals")
-        builder.add_edge("enrich_meals", "enrich_routes")
+        builder.add_edge("create_plan", "enrich_routes")
         builder.add_edge("enrich_routes", "review_plan")
         builder.add_conditional_edges(
             "review_plan",
@@ -129,13 +121,11 @@ class TripPlanningGraph:
         attractions_task = self.attraction_agent.run(request)
         weather_task = self.weather_agent.run(request)
         hotels_task = self.hotel_agent.run(request)
-        meals_task = self.meal_agent.run(request)
 
-        attractions, weather_info, hotels, meals = await asyncio.gather(
+        attractions, weather_info, hotels = await asyncio.gather(
             attractions_task,
             weather_task,
             hotels_task,
-            meals_task,
         )
         await self._emit(
             state,
@@ -144,14 +134,12 @@ class TripPlanningGraph:
             elapsed_ms=round((perf_counter() - started) * 1000, 1),
             attractions=len(attractions),
             hotels=len(hotels),
-            meals=len(meals),
             weather=len(weather_info),
         )
         return {
             "attractions": attractions,
             "weather_info": weather_info,
             "hotels": hotels,
-            "meals": meals,
             "candidate_count": len(attractions),
         }
 
@@ -163,7 +151,6 @@ class TripPlanningGraph:
             state.get("attractions", []),
             state.get("hotels", []),
             state.get("weather_info", []),
-            state.get("meals", []),
             feedback=state.get("feedback") or None,
         )
         await self._emit(
@@ -174,68 +161,6 @@ class TripPlanningGraph:
             degraded=plan.degraded,
         )
         return {"plan": plan}
-
-    async def _enrich_meals(self, state: TripPlanningState) -> TripPlanningState:
-        """Re-pick meals using around-search anchored at the hotel and each day's first stop."""
-        request = _require_request(state)
-        plan = _require_plan(state)
-        base_pool = list(state.get("meals") or [])
-        started = perf_counter()
-        await self._emit(state, "enrich_meals", "start")
-
-        picked_days = await self.enrich_meals(request, plan, base_pool)
-        await self._emit(
-            state,
-            "enrich_meals",
-            "done",
-            elapsed_ms=round((perf_counter() - started) * 1000, 1),
-            days_with_meals=picked_days,
-        )
-        return {"plan": plan}
-
-    async def enrich_meals(
-        self,
-        request: TripPlanRequest,
-        plan: TripPlan,
-        base_pool: list[Meal],
-        day_indexes: set[int] | None = None,
-    ) -> int:
-        """Re-pick meals around the hotel and each day's first stop.
-
-        Shared by the generation graph and the conversational revision path, so an
-        edited day is anchored the same way a freshly generated one is. The
-        city-wide ``base_pool`` stays as a fallback: offline/sample runs (no
-        coordinates) behave exactly as before.
-        """
-        targets = [day for day in plan.days if day_indexes is None or day.day_index in day_indexes]
-        if not targets:
-            return 0
-
-        hotel = next((day.hotel for day in plan.days if day.hotel), None)
-        breakfast_pool: list[Meal] = []
-        if hotel and hotel.location is not None:
-            breakfast_pool = await self.meal_agent.run_around(request, hotel.location, radius=1200, limit=8)
-
-        untouched = [day for day in plan.days if day not in targets]
-        used_keys: set[str] = {"".join(meal.name.split()).lower() for day in untouched for meal in day.meals}
-        picked_days = 0
-        for day in targets:
-            anchor = day.attractions[0].location if day.attractions else (day.hotel.location if day.hotel else None)
-            around: list[Meal] = []
-            if anchor is not None:
-                around = await self.meal_agent.run_around(request, anchor, radius=2500, limit=10)
-
-            pool = _merge_meals(around, breakfast_pool, base_pool)
-            if not pool:
-                continue
-            preferred = [meal.name for meal in day.meals]
-            meals = pick_meals(pool, request, day.hotel, day.attractions, used_keys, preferred=preferred)
-            if meals:
-                day.meals = meals
-                picked_days += 1
-
-        plan.budget = calculate_budget(plan.days, request)
-        return picked_days
 
     async def _enrich_routes(self, state: TripPlanningState) -> TripPlanningState:
         started = perf_counter()
@@ -306,17 +231,3 @@ class TripPlanningGraph:
     @staticmethod
     def _route_after_review(state: TripPlanningState) -> str:
         return "replan" if state.get("feedback") else "done"
-
-
-def _merge_meals(*pools: list[Meal]) -> list[Meal]:
-    """Deduplicate candidates by name, keeping the first (most local) occurrence."""
-    merged: list[Meal] = []
-    seen: set[str] = set()
-    for pool in pools:
-        for meal in pool:
-            key = "".join(meal.name.split()).lower()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            merged.append(meal)
-    return merged

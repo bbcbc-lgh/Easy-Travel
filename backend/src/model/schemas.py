@@ -113,7 +113,10 @@ class PlanDecisionDay(BaseModel):
     day_index: int = Field(..., ge=0, description="第几天(从0开始)")
     description: str = Field(..., min_length=1, description="当日安排与理由")
     attractions: list[str] = Field(default_factory=list, description="只能取候选景点名称")
-    meals: list[str] = Field(default_factory=list, description="只能取候选餐饮名称")
+    meals: list[str] = Field(
+        default_factory=list,
+        description="已废弃：餐食不再进规划。保留字段仅为兼容旧数据，模型不应填写",
+    )
     hotel: str | None = Field(default=None, description="只能取候选酒店名称")
 
 

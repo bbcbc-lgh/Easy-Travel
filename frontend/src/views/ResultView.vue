@@ -101,7 +101,7 @@
         <div class="budget-grid">
           <a-statistic title="景点门票" :value="tripPlan.budget.total_attractions" suffix="元" />
           <a-statistic title="酒店住宿" :value="tripPlan.budget.total_hotels" suffix="元" />
-          <a-statistic title="餐饮费用" :value="tripPlan.budget.total_meals" suffix="元" />
+          <a-statistic title="餐费估算" :value="tripPlan.budget.total_meals" suffix="元" />
           <a-statistic title="交通费用" :value="tripPlan.budget.total_transportation" suffix="元" />
           <a-statistic
             class="total-budget"
@@ -292,30 +292,6 @@
                 </div>
               </div>
 
-              <div class="meal-list">
-                <div
-                  v-for="meal in day.meals"
-                  :key="`${day.date}-${meal.type}-${meal.name}`"
-                  class="meal-item"
-                >
-                  <div>
-                    <span>{{ mealTypeLabel(meal.type) }}</span>
-                    <strong>{{ meal.name }}</strong>
-                    <small>
-                      {{ meal.address || meal.description || '暂无可导航地址' }}
-                      <template v-if="meal.opening_hours"> · {{ meal.opening_hours }}</template>
-                    </small>
-                  </div>
-                  <div class="meal-cost">
-                    <a-tag v-if="meal.source === 'sample'" color="warning">演示数据</a-tag>
-                    <a-tag v-else-if="meal.price_source === 'estimated'" color="default"
-                      >估算</a-tag
-                    >
-                    <span>{{ priceText(meal.estimated_cost, meal.price_source) }}</span>
-                  </div>
-                </div>
-              </div>
-
               <div v-if="(day.routes || []).length" class="route-list">
                 <div
                   v-for="leg in day.routes || []"
@@ -414,7 +390,6 @@ import { paginateCanvas } from '../utils/pdf'
 import {
   degradedReasonLabel,
   formatDistance,
-  mealTypeLabel,
   moveItem,
   nightsFor,
   priceText,

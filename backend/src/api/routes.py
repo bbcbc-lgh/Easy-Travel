@@ -185,18 +185,6 @@ async def revise_trip_plan(
             candidates = await pipeline.collect_for_edit(request, plan)
             patch = await pipeline.reviser.propose(request, plan, candidates, body.instruction)
             revised = pipeline.reviser.apply(plan, patch, request, candidates)
-            changed_days = _days_needing_meal_anchor(patch)
-            if changed_days:
-                try:
-                    await pipeline.enrich_meals(request, revised, candidates, changed_days)
-                except Exception as exc:  # noqa: BLE001 - meal enrichment is best effort
-                    log_event(
-                        logger,
-                        "plan.meal_enrichment_failed",
-                        level=logging.WARNING,
-                        plan_id=plan_id,
-                        reason=type(exc).__name__,
-                    )
     except QuotaExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

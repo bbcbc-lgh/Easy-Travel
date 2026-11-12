@@ -65,7 +65,7 @@ describe('HomeView', () => {
     expect(streamTripPlan).not.toHaveBeenCalled()
   })
 
-  it('shows the pipeline stages in order, including meal enrichment', () => {
+  it('shows the pipeline stages in order', () => {
     getHealth.mockResolvedValue({ status: 'ok', app_name: 'x', services: { llm: true } })
 
     const wrapper = mountHome()

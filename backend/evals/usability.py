@@ -17,10 +17,7 @@ from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
 from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS
 from src.planning.density import DAILY_LOAD_LIMIT, day_load
 from src.planning.hours import is_closed_on, weekday_name
-from src.planning.scheduler import MEAL_COST_CAP, haversine_meters
-
-MEAL_LABELS = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
-REQUIRED_MEALS = ("breakfast", "lunch", "dinner")
+from src.planning.scheduler import haversine_meters
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,8 +33,6 @@ RULES: tuple[Rule, ...] = (
     Rule("day_travel", "单日景点间移动不超过 20 公里"),
     Rule("day_duration", "单日游览时长不超过 7 小时"),
     Rule("day_load", "单日强度不超过建议上限"),
-    Rule("meals_complete", "每天三餐齐全"),
-    Rule("meal_budget", "餐费不超过预算档位上限"),
     Rule("open_on_the_day", "当天没有闭馆地点"),
     Rule("no_duplicates", "没有重复景点"),
 )
@@ -80,11 +75,6 @@ def _intra_day_meters(day: DayPlan) -> float:
     )
 
 
-def _meal_cap(request: TripPlanRequest, meal_type: str) -> int | None:
-    caps = MEAL_COST_CAP.get(request.budget, MEAL_COST_CAP["中等"])
-    return caps.get(meal_type)
-
-
 def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsability:
     """Every rule the plan breaks, in reading order. Empty list means usable."""
     case = CaseUsability(case_id=case_id)
@@ -118,27 +108,11 @@ def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsabil
         if load > DAILY_LOAD_LIMIT:
             failures.append(Failure("day_load", f"第 {label} 天强度 {load:.1f}（上限 {DAILY_LOAD_LIMIT}）"))
 
-        present = {meal.type for meal in day.meals}
-        missing = [MEAL_LABELS[meal] for meal in REQUIRED_MEALS if meal not in present]
-        if missing:
-            failures.append(Failure("meals_complete", f"第 {label} 天缺少{'、'.join(missing)}"))
-
-        for meal in day.meals:
-            cap = _meal_cap(request, meal.type)
-            if cap is not None and meal.estimated_cost > cap:
-                failures.append(
-                    Failure(
-                        "meal_budget",
-                        f"第 {label} 天{MEAL_LABELS.get(meal.type, '餐饮')}"
-                        f"「{meal.name}」{meal.estimated_cost} 元（上限 {cap}）",
-                    )
-                )
-
         try:
             weekday = date.fromisoformat(day.date).weekday()
         except ValueError:
             continue
-        for item in [*day.attractions, *day.meals]:
+        for item in day.attractions:
             if is_closed_on(item.opening_hours, weekday) is True:
                 failures.append(
                     Failure(

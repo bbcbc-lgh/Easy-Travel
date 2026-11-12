@@ -8,13 +8,6 @@ import type { Attraction, PriceSource } from '../types/trip'
  * inside a 750-line component.
  */
 
-const MEAL_LABELS: Record<string, string> = {
-  breakfast: '早餐',
-  lunch: '午餐',
-  dinner: '晚餐',
-  snack: '加餐'
-}
-
 const WEATHER_SOURCE_LABELS: Record<string, string> = {
   amap: '高德天气',
   open_meteo: '天气预报',
@@ -44,10 +37,6 @@ export function nightsFor(days: number): number {
 
 export function formatDistance(meters: number): string {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${meters} 米`
-}
-
-export function mealTypeLabel(type: string): string {
-  return MEAL_LABELS[type] ?? '餐饮'
 }
 
 export function weatherSourceLabel(source?: string): string {

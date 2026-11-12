@@ -5,15 +5,13 @@ from datetime import date
 from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
 from src.planning.density import DAILY_LOAD_LIMIT, day_load, describe_load
 from src.planning.hours import is_closed_on, weekday_name
-from src.planning.scheduler import MEAL_COST_CAP, haversine_meters
+from src.planning.scheduler import haversine_meters
 from src.service.logging import log_event
 
 logger = logging.getLogger(__name__)
 
 DAY_TRAVEL_LIMIT_METERS = 20_000
 DAILY_ATTRACTION_LIMIT_MINUTES = 420
-
-MEAL_LABELS = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
 
 
 @dataclass(slots=True)
@@ -45,13 +43,11 @@ class PlanCritic:
     """Deterministic critic that reports problems objectively.
 
     Only issues the model actually controls go back into the next planning
-    round. Meal prices, for example, are chosen by the scheduler from whatever
-    the data layer offers — asking the model to "pick a cheaper restaurant"
-    cannot change them, so they become notes instead of a costly retry.
+    round; anything the data layer decides becomes a note instead of a costly
+    retry.
     """
 
     def review(self, request: TripPlanRequest, plan: TripPlan) -> Critique:
-        caps = MEAL_COST_CAP.get(request.budget, MEAL_COST_CAP["中等"])
         critique = Critique()
 
         for day in plan.days:
@@ -68,15 +64,6 @@ class PlanCritic:
 
             if sum(item.visit_duration for item in day.attractions) > DAILY_ATTRACTION_LIMIT_MINUTES:
                 critique.issues.append(f"第 {label} 天景点游览时间过长，请减少一个景点或换成更轻松的安排。")
-
-            for meal in day.meals:
-                cap = caps.get(meal.type)
-                if cap and meal.estimated_cost > cap:
-                    label_text = MEAL_LABELS.get(meal.type, "餐饮")
-                    critique.notes.append(
-                        f"第 {label} 天{label_text}「{meal.name}」人均约 {meal.estimated_cost} 元，"
-                        f"高于{request.budget}预算的参考上限 {cap} 元。"
-                    )
 
             critique.issues.extend(self._closure_issues(day))
 
@@ -118,7 +105,7 @@ class PlanCritic:
             return []
 
         issues: list[str] = []
-        for item in [*day.attractions, *day.meals]:
+        for item in day.attractions:
             if is_closed_on(item.opening_hours, weekday) is True:
                 issues.append(
                     f"第 {day.day_index + 1} 天（{weekday_name(weekday)}）「{item.name}」"

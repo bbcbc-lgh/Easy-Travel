@@ -11,7 +11,6 @@ from evals.usability import RULES, Failure, assess, summarise
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
 from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS
 from src.planning.density import DAILY_LOAD_LIMIT
-from src.planning.scheduler import MEAL_COST_CAP
 
 HANGZHOU = Location(longitude=120.15, latitude=30.27)
 
@@ -132,35 +131,6 @@ def test_a_packed_day_breaks_duration_and_load() -> None:
     assert DAILY_LOAD_LIMIT < 3 * 2.0
 
 
-def test_a_missing_breakfast_is_unusable() -> None:
-    verdict = assess(trip(day(meals=[meal("lunch"), meal("dinner")])), request(), "meals")
-
-    assert "meals_complete" in rules_broken(verdict.failures)
-    assert any("早餐" in failure.message for failure in verdict.failures)
-
-
-def test_an_over_budget_meal_is_unusable() -> None:
-    caps = MEAL_COST_CAP["经济"]
-    verdict = assess(
-        trip(day(meals=three_meals(cost=caps["lunch"] + 50))),
-        request(budget="经济"),
-        "budget",
-    )
-
-    assert "meal_budget" in rules_broken(verdict.failures)
-
-
-def test_an_over_budget_meal_is_fine_at_a_higher_tier() -> None:
-    caps = MEAL_COST_CAP["经济"]
-    verdict = assess(
-        trip(day(meals=three_meals(cost=caps["lunch"] + 50))),
-        request(budget="豪华"),
-        "budget",
-    )
-
-    assert "meal_budget" not in rules_broken(verdict.failures)
-
-
 def test_a_closed_venue_is_unusable() -> None:
     # 2026-12-07 is a Monday.
     monday = day(attractions=[attraction("周一闭馆的馆", opening_hours="周一闭馆")], when="2026-12-07")
@@ -199,8 +169,6 @@ def test_every_rule_has_a_stable_key() -> None:
         "day_travel",
         "day_duration",
         "day_load",
-        "meals_complete",
-        "meal_budget",
         "open_on_the_day",
         "no_duplicates",
     ]
@@ -209,17 +177,15 @@ def test_every_rule_has_a_stable_key() -> None:
 def test_summary_counts_cases_and_failures_by_rule() -> None:
     results = [
         assess(trip(day()), request(), "good"),
-        assess(trip(day(meals=[meal("lunch")])), request(), "no-breakfast"),
         assess(trip(day(attractions=[])), request(), "no-stops"),
     ]
 
     summary = summarise(results)
 
-    assert summary.cases == 3
+    assert summary.cases == 2
     assert summary.usable == 1
-    assert summary.usable_ratio == 1 / 3
-    assert summary.unusable_cases == ["no-breakfast", "no-stops"]
-    assert summary.failures_by_rule["meals_complete"] == 1
+    assert summary.usable_ratio == 0.5
+    assert summary.unusable_cases == ["no-stops"]
     assert summary.failures_by_rule["days_have_stops"] == 1
     assert summary.failures_by_rule["day_travel"] == 0
 

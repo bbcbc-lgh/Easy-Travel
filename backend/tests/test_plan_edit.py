@@ -94,18 +94,6 @@ def test_put_rejects_an_unknown_attraction(owned_client, plan_payload, offline_m
     assert "unknown_attraction" in response.json()["detail"]
 
 
-def test_put_rejects_an_unknown_meal(owned_client, plan_payload, offline_mode) -> None:
-    created = owned_client.post("/api/trip/plan", json=plan_payload()).json()
-
-    forged = deepcopy(created)
-    forged["days"][0]["meals"][0]["name"] = "伪造餐厅"
-
-    response = owned_client.put(f"/api/trip/plans/{created['id']}", json=forged)
-
-    assert response.status_code == 422
-    assert "unknown_meal" in response.json()["detail"]
-
-
 def test_put_ignores_client_supplied_prices(owned_client, plan_payload, offline_mode) -> None:
     created = owned_client.post("/api/trip/plan", json=plan_payload()).json()
     original = created["days"][0]["attractions"][0]

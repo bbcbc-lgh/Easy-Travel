@@ -14,7 +14,7 @@ from src.model.schemas import (
 )
 from src.planning.budget import calculate_budget
 from src.planning.contracts import CandidatePlaces
-from src.planning.scheduler import optimise_order, pick_meals
+from src.planning.scheduler import optimise_order
 from src.service.llm_gateway import LLMGateway, LLMGeneration
 from src.service.logging import log_event
 
@@ -56,13 +56,13 @@ class LLMPlanner:
         system_prompt = (
             "你是行程规划专家。只能从用户给出的候选地点中选择，不要编造任何地点。\n"
             '只输出 JSON：{"days":[{"day_index":0,"description":"当日安排与安排理由",'
-            '"attractions":["景点名称"],"meals":["餐饮名称"],"hotel":"酒店名称"}],'
+            '"attractions":["景点名称"],"hotel":"酒店名称"}],'
             '"overall_suggestions":"整体建议"}\n'
             f"规则：days 必须恰好覆盖 0 到 {request.days - 1}；每天 1-3 个景点，所有景点不得重复；"
             "同一天景点必须彼此靠近（尽量在 5 公里内），避免跨区折返；"
             "同一天不要安排两个大型场馆（博物馆/纪念馆/美术馆/展览馆）——两个大馆走不完；"
             "如果当天已经有一个大馆，第二个景点请选公园、街区或市集这类轻松的场所；"
-            "每天安排 3 个餐饮，早餐要选酒店附近的早点类店铺；"
+            ""
             "description 只写活动、区域和节奏，不要写具体餐厅或酒店名称（餐食与住宿由其他字段决定）；"
             "hotel 只能取候选酒店；不要输出坐标、价格、天气或 Markdown 代码块。"
         )
@@ -78,7 +78,6 @@ class LLMPlanner:
             f"住宿：{request.accommodation}\n"
             f"候选景点：{json.dumps([item.name for item in candidates.attractions[:24]], ensure_ascii=False)}\n"
             f"候选酒店：{json.dumps([item.name for item in candidates.hotels[:6]], ensure_ascii=False)}\n"
-            f"候选餐饮：{json.dumps([item.name for item in candidates.meals[:12]], ensure_ascii=False)}\n"
             f"天气：{json.dumps(weather_summary, ensure_ascii=False)}\n"
         )
         if feedback:
@@ -98,7 +97,6 @@ class LLMPlanner:
     ) -> Callable[[dict], PlanDecision]:
         attraction_index = _index_by_name(candidates.attractions)
         hotel_index = _index_by_name(candidates.hotels)
-        meal_index = _index_by_name(candidates.meals)
 
         def validate(payload: dict) -> PlanDecision:
             decision = PlanDecision.model_validate(payload)
@@ -119,9 +117,6 @@ class LLMPlanner:
                     if key in seen:
                         raise ValueError(f"attraction {name!r} is used on more than one day")
                     seen.add(key)
-                for name in day.meals:
-                    if _name_key(name) not in meal_index:
-                        raise ValueError(f"meal {name!r} is not in the candidate list")
                 if day.hotel and _name_key(day.hotel) not in hotel_index:
                     raise ValueError(f"hotel {day.hotel!r} is not in the candidate list")
             return decision
@@ -140,7 +135,6 @@ class LLMPlanner:
         default_hotel = candidates.hotels[0] if candidates.hotels else None
         decision_by_index = {day.day_index: day for day in decision.days}
 
-        used_meal_keys: set[str] = set()
         days: list[DayPlan] = []
         for day_index in range(request.days):
             selected = decision_by_index.get(day_index)
@@ -159,14 +153,10 @@ class LLMPlanner:
                 hotel = hotel_index.get(_name_key(selected.hotel)) or default_hotel
 
             ordered = optimise_order(hotel.location if hotel else None, attractions)
-            meals: list[Meal] = pick_meals(
-                candidates.meals,
-                request,
-                hotel,
-                ordered,
-                used_meal_keys,
-                preferred=selected.meals,
-            )
+            # The plan says where to go and in what order. Meals are left to the
+            # traveller: restaurant data is the least reliable input in this system
+            # and nobody wants their lunch decided by a POI category.
+            meals: list[Meal] = []
 
             days.append(
                 DayPlan(

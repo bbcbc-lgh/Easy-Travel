@@ -190,7 +190,6 @@ const llmReady = ref<boolean | null>(null)
 const stageOrder = [
   { key: 'collect_candidates', label: '收集候选地点' },
   { key: 'create_plan', label: '规划行程' },
-  { key: 'enrich_meals', label: '就近挑选餐饮' },
   { key: 'enrich_routes', label: '计算路线' },
   { key: 'review_plan', label: '质量检查' }
 ] as const

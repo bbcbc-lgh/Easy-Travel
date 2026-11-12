@@ -101,19 +101,6 @@ def test_an_unknown_reason_is_rejected(owned_client, plan_payload, offline_mode)
     assert response.status_code == 422
 
 
-def test_meals_can_be_reported(owned_client, plan_payload, offline_mode) -> None:
-    plan = create_plan(owned_client, plan_payload)
-    meal = plan["days"][0]["meals"][0]
-
-    response = owned_client.post(
-        f"/api/trip/plans/{plan['id']}/feedback",
-        json=feedback_payload(plan, target="meal", target_name=meal["name"], reason="too_far"),
-    )
-
-    assert response.status_code == 204
-    assert get_trip_plan_repository().feedback_summary() == [{"reason": "too_far", "target": "meal", "count": 1}]
-
-
 def test_names_are_compared_ignoring_spacing(owned_client, plan_payload, offline_mode) -> None:
     """The page may render a name with different spacing; that is the same stop."""
     plan = create_plan(owned_client, plan_payload)

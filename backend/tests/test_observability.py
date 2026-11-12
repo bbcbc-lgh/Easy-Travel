@@ -284,7 +284,8 @@ def test_planner_logs_model_provenance_on_success() -> None:
     # The model only chose names; every fact comes from the data layer.
     assert plan.days[0].description == "上午博物馆，下午湖边慢行。"
     assert plan.days[0].attractions[0].location.longitude == 120.155
-    assert plan.days[0].meals[0].type == "breakfast"
+    # Meals are no longer planned; the day is about where to go.
+    assert plan.days[0].meals == []
     assert plan.overall_suggestions == "按区域安排，减少折返。"
 
 

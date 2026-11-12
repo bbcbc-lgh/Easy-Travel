@@ -22,18 +22,6 @@ export interface Attraction {
   source: 'amap' | 'sample'
 }
 
-export interface Meal {
-  type: 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  name: string
-  address?: string | null
-  location?: Location | null
-  description?: string | null
-  estimated_cost: number
-  price_source: PriceSource
-  opening_hours?: string | null
-  source: 'amap' | 'sample'
-}
-
 export interface Hotel {
   name: string
   address: string
@@ -77,7 +65,6 @@ export interface DayPlan {
   accommodation: string
   hotel?: Hotel | null
   attractions: Attraction[]
-  meals: Meal[]
   routes: RouteLeg[]
 }
 

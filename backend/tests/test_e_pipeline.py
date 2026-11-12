@@ -41,7 +41,8 @@ def test_rule_planner_implements_the_planner_interface() -> None:
     assert plan.days[1].date == "2026-11-21"
     assert plan.budget is not None
     assert plan.budget.total > 0
-    assert plan.days[0].meals
+    # Meals are no longer planned; a day is where to go and in what order.
+    assert plan.days[0].meals == []
     assert {meal.type for meal in plan.days[0].meals} <= {"breakfast", "lunch", "dinner"}
 
 

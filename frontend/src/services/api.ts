@@ -72,7 +72,7 @@ export type FeedbackReason = 'too_packed' | 'wrong_place' | 'closed' | 'too_far'
 
 export interface PlanFeedbackPayload {
   day_index: number
-  target: 'attraction' | 'meal' | 'hotel'
+  target: 'attraction' | 'hotel'
   target_name: string
   reason: FeedbackReason
   note?: string
