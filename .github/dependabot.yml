@@ -1,22 +1,65 @@
 # Keeps the pinned dependencies from quietly ageing. Advisories are fixed in CI by
 # pip-audit and npm audit, but those only report - this opens the upgrade PR.
+#
+# Grouped on purpose. Without `groups` every outdated package gets its own branch
+# and pull request, which turned one config commit into six PRs and six CI runs of
+# noise. Patches and minors now arrive as one PR per ecosystem; majors that need
+# their own verification round are listed under `ignore` instead of sitting open.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      backend-tooling:
+        patterns: ["pytest*", "ruff", "pyright", "pip-audit"]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      frontend-tooling:
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "stylelint*"
+          - "typescript*"
+          - "vitest*"
+          - "@vitest/*"
+          - "@vue/test-utils"
+          - "jsdom"
+      frontend-runtime:
+        # Only routine bumps; a runtime major gets its own attention.
+        patterns:
+          - "vue"
+          - "vue-router"
+          - "axios"
+          - "dayjs"
+          - "jspdf"
+          - "html2canvas"
+          - "ant-design-vue"
+          - "lucide-vue-next"
+          - "@amap/*"
+        update-types: ["minor", "patch"]
+    ignore:
+      # Majors that each need their own verification round. The PRs were closed
+      # with the reasoning; remove an entry when you decide to do that round.
+      - dependency-name: "vue-router"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "lucide-vue-next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "stylelint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "stylelint-config-standard"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
