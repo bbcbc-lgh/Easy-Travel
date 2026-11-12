@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', Arial, sans-serif;
   color: #1b2e2b;
   background: #f4f6f2;
@@ -1439,4 +1439,32 @@ select:focus-visible,
     padding: 0 !important;
     color: inherit !important;
   }
+}
+
+/* "this stop is wrong": small and quiet, because it is an aside to reading the
+   plan, not an action competing with it. */
+.feedback-action {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  opacity: 0.45;
+  transition: opacity 120ms ease;
+}
+
+.attraction-item:hover .feedback-action,
+.feedback-action:focus-within {
+  opacity: 1;
+}
+
+.feedback-button {
+  color: var(--muted, #7a7166);
+}
+
+.feedback-button-done {
+  color: #4c7a5a;
+  opacity: 0.7;
+}
+
+/* Keep the reason labels readable at menu size. */
+.feedback-reason {
+  font-size: 0.85rem;
 }

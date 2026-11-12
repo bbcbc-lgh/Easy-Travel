@@ -12,6 +12,7 @@ from src.api.security import get_owner_id
 from src.config import settings
 from src.model.schemas import (
     HealthResponse,
+    PlanFeedback,
     PlanPatch,
     ReviseRequest,
     ReviseResponse,
@@ -280,6 +281,46 @@ async def delete_trip_plan(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/trip/plans/{plan_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def submit_feedback(
+    plan_id: str,
+    body: PlanFeedback,
+    owner_id: str = Depends(get_owner_id),
+    repository: TripPlanRepository = Depends(get_trip_plan_repository),
+) -> Response:
+    """Record "this stop is wrong" for a saved plan.
+
+    The name is resolved against the stored plan rather than trusted: a row that
+    points at a place the plan never contained is noise in the summary, and the
+    client is the one guessing.
+    """
+    plan = repository.get_plan(plan_id, owner_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Trip plan not found")
+
+    day = next((item for item in plan.days if item.day_index == body.day_index), None)
+    if day is None:
+        raise HTTPException(status_code=422, detail=f"第 {body.day_index} 天不在这份行程里")
+
+    if _place_key(body.target_name) not in _feedback_names(day, body.target):
+        raise HTTPException(
+            status_code=422,
+            detail=f"「{body.target_name}」不在第 {body.day_index} 天的{body.target}里",
+        )
+
+    repository.add_feedback(plan_id, owner_id, body)
+    log_event(
+        logger,
+        "plan.feedback",
+        plan_id=plan_id,
+        day_index=body.day_index,
+        target=body.target,
+        reason=body.reason,
+        has_note=bool(body.note),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put("/trip/plans/{plan_id}", response_model=TripPlan)
 async def update_trip_plan(
     plan_id: str,
@@ -337,3 +378,19 @@ def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest
     plan = pipeline.review_agent.run(request, plan)
     critique = pipeline.critic.review(request, plan)
     return attach_critique(plan, critique, will_retry=False)
+
+
+def _place_key(name: str) -> str:
+    """Identity of a name for feedback purposes: whitespace and case do not count."""
+    return "".join(name.split()).lower()
+
+
+def _feedback_names(day, target: str) -> set[str]:
+    """Names actually present for that target on that day."""
+    if target == "meal":
+        items = list(day.meals)
+    elif target == "hotel":
+        items = [day.hotel] if day.hotel else []
+    else:
+        items = list(day.attractions)
+    return {_place_key(item.name) for item in items}

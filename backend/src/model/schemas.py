@@ -262,3 +262,33 @@ class ReviseRequest(BaseModel):
 class ReviseResponse(BaseModel):
     plan: TripPlan
     reply: str
+
+
+#: Why a traveller says a stop is wrong. Kept as a closed set so the summary can
+#: count categories instead of reading prose.
+FeedbackReason = Literal["too_packed", "wrong_place", "closed", "too_far", "other"]
+FeedbackTarget = Literal["attraction", "meal", "hotel"]
+
+
+class PlanFeedback(BaseModel):
+    """One "this part is wrong" note attached to a stop in a saved plan."""
+
+    day_index: int = Field(..., ge=0, description="第几天(从0开始)")
+    target: FeedbackTarget = Field("attraction", description="针对哪类安排")
+    target_name: str = Field(..., min_length=1, max_length=200, description="地点名称，必须在计划里")
+    reason: FeedbackReason = Field(..., description="问题类型")
+    note: str | None = Field(default=None, max_length=300, description="可选补充说明")
+
+    @field_validator("target_name")
+    @classmethod
+    def strip_target_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("target_name must not be blank")
+        return cleaned
+
+
+class FeedbackSummaryRow(BaseModel):
+    reason: str
+    target: str
+    count: int

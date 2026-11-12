@@ -257,6 +257,38 @@
                       <template #icon><Trash2 :size="15" /></template>
                     </a-button>
                   </div>
+                  <!-- Available outside edit mode on purpose: the user notices a
+                       bad stop while reading the plan, not while editing it. -->
+                  <div class="feedback-action" data-html2canvas-ignore>
+                    <a-dropdown :trigger="['click']" placement="bottomRight">
+                      <a-button
+                        size="small"
+                        type="text"
+                        class="feedback-button"
+                        :class="{ 'feedback-button-done': isReported(dayIndex, attraction.name) }"
+                        :title="
+                          isReported(dayIndex, attraction.name)
+                            ? '已经记下这个反馈'
+                            : '这个安排不对'
+                        "
+                        :disabled="isReported(dayIndex, attraction.name)"
+                        @click="pendingStop = { dayIndex, name: attraction.name }"
+                      >
+                        <template #icon><Flag :size="14" /></template>
+                      </a-button>
+                      <template #overlay>
+                        <a-menu @click="onFeedbackMenu">
+                          <a-menu-item
+                            v-for="reason in FEEDBACK_REASONS"
+                            :key="reason.value"
+                            class="feedback-reason"
+                          >
+                            {{ reason.label }}
+                          </a-menu-item>
+                        </a-menu>
+                      </template>
+                    </a-dropdown>
+                  </div>
                 </div>
               </div>
 
@@ -354,6 +386,7 @@ import {
   ChevronDown,
   CloudSun,
   Download,
+  Flag,
   Hotel,
   MapPinned,
   Pencil,
@@ -368,7 +401,14 @@ import { Modal, message } from 'ant-design-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { deleteTripPlan, getTripPlan, reviseTripPlan, updateTripPlan } from '../services/api'
+import {
+  deleteTripPlan,
+  getTripPlan,
+  reviseTripPlan,
+  sendPlanFeedback,
+  updateTripPlan
+} from '../services/api'
+import type { FeedbackReason } from '../services/api'
 import type { TripPlan } from '../types/trip'
 import { paginateCanvas } from '../utils/pdf'
 import {
@@ -389,6 +429,17 @@ const selectedKeys = ref(['overview'])
 const editMode = ref(false)
 const saving = ref(false)
 const exporting = ref<'' | 'image' | 'pdf' | 'print'>('')
+const pendingStop = ref<{ dayIndex: number; name: string } | null>(null)
+const reportedStops = ref<Set<string>>(new Set())
+const reporting = ref(false)
+
+const FEEDBACK_REASONS: { value: FeedbackReason; label: string }[] = [
+  { value: 'too_packed', label: '排得太满' },
+  { value: 'wrong_place', label: '地点不合适' },
+  { value: 'closed', label: '当时不开放' },
+  { value: 'too_far', label: '距离太远' },
+  { value: 'other', label: '其他' }
+]
 const originalPlan = ref<TripPlan | null>(null)
 const mapReady = ref(false)
 const mapStatus = ref('正在准备地图')
@@ -485,6 +536,44 @@ function deleteAttraction(dayIndex: number, attractionIndex: number) {
   const attractions = tripPlan.value?.days[dayIndex]?.attractions
   if (!attractions) return
   removeAt(attractions, attractionIndex)
+}
+
+function stopKey(dayIndex: number, name: string): string {
+  return `${dayIndex}|${name}`
+}
+
+/** Whether this stop's complaint is already recorded, so the button can go quiet. */
+function isReported(dayIndex: number, name: string): boolean {
+  return reportedStops.value.has(stopKey(dayIndex, name))
+}
+
+/**
+ * Record "this stop is wrong".
+ *
+ * No confirm dialog and no note field: the value of this signal is that it costs
+ * one click, and the note can wait until there is a reason to ask for it. The
+ * backend resolves the name against the stored plan, so nothing here is trusted.
+ */
+async function onFeedbackMenu(info: { key: string | number }) {
+  const stop = pendingStop.value
+  pendingStop.value = null
+  if (!stop || !tripPlan.value?.id || reporting.value) return
+
+  reporting.value = true
+  try {
+    await sendPlanFeedback(tripPlan.value.id, {
+      day_index: stop.dayIndex,
+      target: 'attraction',
+      target_name: stop.name,
+      reason: String(info.key) as FeedbackReason
+    })
+    reportedStops.value = new Set([...reportedStops.value, stopKey(stop.dayIndex, stop.name)])
+    message.success('已记录，谢谢')
+  } catch (error) {
+    message.error(`反馈没有记上：${error instanceof Error ? error.message : '请稍后再试'}`)
+  } finally {
+    reporting.value = false
+  }
 }
 
 function persistPlan() {

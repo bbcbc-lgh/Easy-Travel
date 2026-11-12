@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
 import Antd from 'ant-design-vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,12 +6,14 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 const getTripPlan = vi.fn()
 const updateTripPlan = vi.fn()
+const sendPlanFeedback = vi.fn()
 
 vi.mock('../src/services/api', () => ({
   getTripPlan: (...args: unknown[]) => getTripPlan(...args),
   updateTripPlan: (...args: unknown[]) => updateTripPlan(...args),
   deleteTripPlan: vi.fn(),
-  reviseTripPlan: vi.fn()
+  reviseTripPlan: vi.fn(),
+  sendPlanFeedback: (...args: unknown[]) => sendPlanFeedback(...args)
 }))
 
 import ResultView from '../src/views/ResultView.vue'
@@ -112,6 +114,7 @@ describe('ResultView', () => {
     sessionStorage.clear()
     getTripPlan.mockReset()
     updateTripPlan.mockReset()
+    sendPlanFeedback.mockReset()
   })
 
   it('renders one card per day, with the day count and city', async () => {
@@ -169,5 +172,53 @@ describe('ResultView', () => {
     expect(updateTripPlan).toHaveBeenCalledTimes(1)
     const savedPayload = updateTripPlan.mock.calls[0]?.[1] as { days: { attractions: unknown[] }[] }
     expect(savedPayload.days[0]?.attractions).toHaveLength(1)
+  })
+})
+
+describe('feedback on a stop', () => {
+  it('records the reason and then goes quiet', async () => {
+    sendPlanFeedback.mockResolvedValue(undefined)
+    const wrapper = await mountResult()
+
+    const flag = wrapper.get('button.feedback-button')
+    expect(flag.attributes('disabled')).toBeUndefined()
+
+    await flag.trigger('click')
+    await flushPromises()
+
+    const reason = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((item) =>
+      item.textContent?.includes('排得太满')
+    )
+    expect(reason, 'the reason menu should open on click').toBeTruthy()
+    ;(reason as HTMLElement).click()
+    await flushPromises()
+
+    expect(sendPlanFeedback).toHaveBeenCalledTimes(1)
+    expect(sendPlanFeedback).toHaveBeenCalledWith(
+      'plan-1',
+      expect.objectContaining({
+        day_index: 0,
+        target: 'attraction',
+        reason: 'too_packed'
+      })
+    )
+
+    // One complaint per stop: the button must not invite a duplicate.
+    expect(wrapper.get('button.feedback-button').attributes('disabled')).toBeDefined()
+  })
+
+  it('reports a failure instead of pretending it was saved', async () => {
+    sendPlanFeedback.mockRejectedValue(new Error('后端没响应'))
+    const wrapper = await mountResult()
+
+    await wrapper.get('button.feedback-button').trigger('click')
+    await flushPromises()
+    const reason = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((item) =>
+      item.textContent?.includes('距离太远')
+    )
+    ;(reason as HTMLElement).click()
+    await flushPromises()
+
+    expect(wrapper.get('button.feedback-button').attributes('disabled')).toBeUndefined()
   })
 })

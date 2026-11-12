@@ -76,8 +76,9 @@ def test_legacy_table_without_owner_id_is_carried_forward(tmp_path: Path) -> Non
 
 
 def test_partial_history_only_applies_the_remainder(tmp_path: Path) -> None:
+    """Every migration but the last already ran; only the last may apply."""
+    done, last = MIGRATIONS[:-1], MIGRATIONS[-1]
     connection = connect(tmp_path / "partial.sqlite3")
-    # A build that already ran versions 1 and 2: the table exists and has owner_id.
     connection.execute(
         """
         CREATE TABLE schema_migrations (
@@ -87,8 +88,12 @@ def test_partial_history_only_applies_the_remainder(tmp_path: Path) -> None:
         )
         """
     )
-    connection.execute("INSERT INTO schema_migrations (version, name) VALUES (1, 'create trip_plans')")
-    connection.execute("INSERT INTO schema_migrations (version, name) VALUES (2, 'add owner_id')")
+    for migration in done:
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
+            (migration.version, migration.name),
+        )
+    # The schema as of the previous migration: trip_plans with owner_id.
     connection.execute(
         """
         CREATE TABLE trip_plans (
@@ -108,9 +113,8 @@ def test_partial_history_only_applies_the_remainder(tmp_path: Path) -> None:
 
     applied = run_migrations(connection)
 
-    assert applied == ["index owner_id + created_at"]
-    indexes = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='index'")}
-    assert "idx_trip_plans_owner_created_at" in indexes
+    assert applied == [last.name]
+    assert pending_versions(connection) == []
     connection.close()
 
 

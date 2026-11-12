@@ -73,10 +73,35 @@ def _index_owner_and_created_at(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_plan_feedback(connection: sqlite3.Connection) -> None:
+    """ "This stop is wrong" notes.
+
+    Deliberately append-only and separate from the plan: feedback is a signal about
+    the planner, so it must survive the plan being edited or deleted.
+    """
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS plan_feedback (
+            id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            day_index INTEGER NOT NULL,
+            target TEXT NOT NULL,
+            target_name TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            note TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_plan_feedback_plan_id ON plan_feedback(plan_id)")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "create trip_plans", _create_trip_plans),
     Migration(2, "add owner_id", _add_owner_column),
     Migration(3, "index owner_id + created_at", _index_owner_and_created_at),
+    Migration(4, "create plan_feedback", _create_plan_feedback),
 )
 
 

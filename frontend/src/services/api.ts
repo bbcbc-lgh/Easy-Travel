@@ -66,6 +66,25 @@ export async function updateTripPlan(id: string, payload: TripPlan): Promise<Tri
 export interface ReviseResult {
   plan: TripPlan
   reply: string
+}
+
+export type FeedbackReason = 'too_packed' | 'wrong_place' | 'closed' | 'too_far' | 'other'
+
+export interface PlanFeedbackPayload {
+  day_index: number
+  target: 'attraction' | 'meal' | 'hotel'
+  target_name: string
+  reason: FeedbackReason
+  note?: string
+}
+
+/** Record "this stop is wrong" so the planner can be measured against real use. */
+export async function sendPlanFeedback(id: string, payload: PlanFeedbackPayload): Promise<void> {
+  try {
+    await api.post(`/trip/plans/${id}/feedback`, payload)
+  } catch (error) {
+    throwApiError(error)
+  }
 } /** Conversational edit: the backend turns the instruction into an applied patch. */
 export async function reviseTripPlan(id: string, instruction: string): Promise<ReviseResult> {
   try {

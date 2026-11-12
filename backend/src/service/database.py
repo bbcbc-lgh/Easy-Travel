@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from src.config import Settings
-from src.model.schemas import TripPlan, TripPlanRequest
+from src.model.schemas import PlanFeedback, TripPlan, TripPlanRequest
 from src.service.migrations import run_migrations
 
 LEGACY_OWNER = "legacy"
@@ -120,6 +120,67 @@ class TripPlanRepository:
                 LIMIT ?
                 """,
                 (owner_id, safe_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_feedback(self, plan_id: str, owner_id: str, feedback: PlanFeedback) -> str:
+        """Record one "this stop is wrong" note; returns its id.
+
+        Append-only and keyed by plan: the note is a signal about the planner, so it
+        must survive the plan being edited afterwards.
+        """
+        feedback_id = uuid4().hex
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO plan_feedback (
+                    id, plan_id, owner_id, day_index, target, target_name,
+                    reason, note, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    feedback_id,
+                    plan_id,
+                    owner_id,
+                    feedback.day_index,
+                    feedback.target,
+                    feedback.target_name,
+                    feedback.reason,
+                    feedback.note,
+                    self._now(),
+                ),
+            )
+        return feedback_id
+
+    def feedback_summary(self) -> list[dict[str, Any]]:
+        """Counts by reason and target, newest data first. Across every owner."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT reason, target, COUNT(*) AS count
+                FROM plan_feedback
+                GROUP BY reason, target
+                ORDER BY count DESC, reason
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def feedback_notes(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Recent free-text notes, with the plan's city, for reading by hand."""
+        safe_limit = max(1, min(limit, 200))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT f.day_index, f.target_name, f.reason, f.note, f.created_at,
+                       p.city, f.plan_id
+                FROM plan_feedback f
+                LEFT JOIN trip_plans p ON p.id = f.plan_id
+                WHERE f.note IS NOT NULL AND f.note <> ''
+                ORDER BY f.created_at DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 
