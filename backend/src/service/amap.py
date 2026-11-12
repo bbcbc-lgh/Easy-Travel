@@ -318,9 +318,22 @@ class AMapService:
             for index in range(request.days)
         ]
 
-    async def enrich_daily_routes(self, plan: TripPlan, request: TripPlanRequest) -> TripPlan:
+    async def enrich_daily_routes(
+        self,
+        plan: TripPlan,
+        request: TripPlanRequest,
+        day_indexes: set[int] | None = None,
+    ) -> TripPlan:
+        """Fill in route legs. Passing ``day_indexes`` recalculates only those days.
+
+        A day whose stops changed after the first pass (the load trim can drop
+        one) must be recalculated, or its route list keeps pointing at a stop that
+        is no longer in the plan.
+        """
         route_tasks: list[tuple[DayPlan, list[asyncio.Task[RouteLeg]]]] = []
         for day in plan.days:
+            if day_indexes is not None and day.day_index not in day_indexes:
+                continue
             route_points: list[tuple[str, Location]] = []
             if day.hotel and day.hotel.location:
                 route_points.append((day.hotel.name, day.hotel.location))
@@ -414,6 +427,13 @@ class AMapService:
         if parsed is None:
             return self._haversine_route(origin_name, origin, destination_name, destination, request.transportation)
         distance, duration = parsed
+        if duration <= 0:
+            # The API gave a distance but no duration; estimate the time from
+            # that distance rather than reporting the default 1 minute.
+            estimated = self._haversine_route(
+                origin_name, origin, destination_name, destination, request.transportation
+            )
+            duration = estimated.duration_minutes
         return RouteLeg(
             origin=origin_name,
             destination=destination_name,
@@ -899,6 +919,12 @@ class AMapService:
             return None
         distance = AMapService._to_int(paths[0].get("distance")) or 0
         duration = AMapService._to_int(paths[0].get("duration")) or 0
+        if duration <= 0:
+            # Driving directions answer with `distance` and `steps`, but no
+            # `duration` at the path level - reporting the missing value as a
+            # duration turned every leg into "1 分钟". Fall back to a speed
+            # estimate instead, and say so by returning None for the caller.
+            return distance, 0
         return distance, max(round(duration / 60), 1)
 
     @staticmethod

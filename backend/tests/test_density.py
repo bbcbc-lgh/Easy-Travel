@@ -130,7 +130,7 @@ def test_trim_drops_stops_until_the_day_fits() -> None:
     plan = build_plan(day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆")))
     assert day_load(plan.days[0]) > DAILY_LOAD_LIMIT
 
-    removed = trim_days_to_load(plan)
+    removed, _changed = trim_days_to_load(plan)
 
     assert day_load(plan.days[0]) <= DAILY_LOAD_LIMIT
     assert removed
@@ -142,7 +142,7 @@ def test_trim_leaves_a_fitting_day_alone() -> None:
     plan = build_plan(day(attraction("公园", "公园"), attraction("街区", "步行街")))
     before = [item.name for item in plan.days[0].attractions]
 
-    removed = trim_days_to_load(plan)
+    removed, _changed = trim_days_to_load(plan)
 
     assert removed == []
     assert [item.name for item in plan.days[0].attractions] == before
@@ -152,7 +152,7 @@ def test_trim_never_empties_a_day() -> None:
     """One stop is always better than an empty day, even if it is a heavy one."""
     plan = build_plan(day(attraction("国博", "博物馆")))
 
-    removed = trim_days_to_load(plan)
+    removed, _changed = trim_days_to_load(plan)
 
     assert removed == []
     assert len(plan.days[0].attractions) == 1

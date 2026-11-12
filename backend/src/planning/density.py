@@ -45,7 +45,7 @@ def describe_load(day: DayPlan) -> str:
     return f"{names}（约 {day_load(day):.1f} 个单位，单日建议上限 {DAILY_LOAD_LIMIT}）"
 
 
-def trim_days_to_load(plan: TripPlan) -> list[str]:
+def trim_days_to_load(plan: TripPlan) -> tuple[list[str], set[int]]:
     """Drop the tail of an over-loaded day until it fits, and say what was dropped.
 
     The model decides *which* places; how many of them fit in a day is arithmetic,
@@ -53,10 +53,16 @@ def trim_days_to_load(plan: TripPlan) -> list[str]:
     showed model plans at 4.0-6.0 load against a 3.5 limit: asking for a replan
     fixed some of them and cost a model call, so the remaining excess is trimmed
     here instead. Never empties a day: one stop is always better than none.
+
+    Returns the messages and the day indexes that lost a stop, so the caller can
+    recalculate those days' routes instead of leaving legs that point at a stop
+    the plan no longer contains.
     """
     removed: list[str] = []
+    changed: set[int] = set()
     for day in plan.days:
         while len(day.attractions) > 1 and day_load(day) > DAILY_LOAD_LIMIT:
             dropped = day.attractions.pop()
+            changed.add(day.day_index)
             removed.append(f"第 {day.day_index + 1} 天已移除「{dropped.name}」（单日强度超出上限）")
-    return removed
+    return removed, changed

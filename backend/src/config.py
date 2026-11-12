@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import AliasChoices, Field, computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.model.llm_profile import ModelProfile
@@ -34,20 +34,11 @@ class Settings(BaseSettings):
 
     # Every backend variable carries the FASTAPI_ prefix, so a single `.env` can
     # hold the frontend's VITE_* keys too without the two sets colliding.
-    amap_web_service_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("FASTAPI_AMAP_WEB_KEY", "AMAP_WEB_KEY"),
-    )
+    amap_web_service_key: str = Field(default="", validation_alias="FASTAPI_AMAP_WEB_KEY")
     use_sample_data: bool = False
 
-    qweather_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("FASTAPI_QWEATHER_API_KEY", "QWEATHER_API_KEY"),
-    )
-    qweather_host: str = Field(
-        default="devapi.qweather.com",
-        validation_alias=AliasChoices("FASTAPI_QWEATHER_HOST", "QWEATHER_HOST"),
-    )
+    qweather_api_key: str = Field(default="", validation_alias="FASTAPI_QWEATHER_API_KEY")
+    qweather_host: str = Field(default="devapi.qweather.com", validation_alias="FASTAPI_QWEATHER_HOST")
 
     database_path: str = "data/easy_travel.sqlite3"
 
@@ -68,7 +59,7 @@ class Settings(BaseSettings):
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
-        # Fields with a validation_alias (AMAP_WEB_KEY, FASTAPI_API_HOST, ...)
+        # Fields with a validation_alias (FASTAPI_AMAP_WEB_KEY, FASTAPI_API_HOST, ...)
         # must also accept their field name, otherwise `Settings(amap_web_service_key=...)`
         # is silently ignored and tests only pass when a local .env exists.
         populate_by_name=True,

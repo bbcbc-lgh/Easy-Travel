@@ -178,19 +178,29 @@ class TripPlanningGraph:
         request = _require_request(state)
         started = perf_counter()
         await self._emit(state, "review_plan", "start")
-        # Trim before scoring: which places the model picked is its call, whether
-        # they fit in one day is arithmetic, and the plan must be walkable.
-        trimmed = trim_days_to_load(_require_plan(state))
-        plan = self.review_agent.run(
-            request,
-            _require_plan(state),
-            candidate_count=state.get("candidate_count", 0),
-        )
-        if trimmed and plan.quality is not None:
-            plan.quality.warnings.extend(trimmed)
+        # Critic first, on the plan as the model produced it. It has to see the
+        # overload to ask for a replan - trimming before the critique used to make
+        # the plan look fine and left the model's own description ("傍晚去万达广场")
+        # describing a stop that had already been dropped.
+        plan = _require_plan(state)
         critique = self.critic.review(request, plan)
         revision = state.get("revision", 0)
         should_revise = critique.needs_revision and revision < self.max_revisions
+        trimmed: list[str] = []
+
+        if not should_revise:
+            # Last resort: the model had its chance, so make the day fit by
+            # arithmetic. Recalculate the routes of the days that lost a stop,
+            # otherwise the route list still points at a place that is gone.
+            trimmed, changed_days = trim_days_to_load(plan)
+            if changed_days:
+                plan = await self.amap_service.enrich_daily_routes(plan, request, changed_days)
+                critique = self.critic.review(request, plan)
+
+        plan = self.review_agent.run(request, plan, candidate_count=state.get("candidate_count", 0))
+        if not should_revise and trimmed:
+            if plan.quality is not None:
+                plan.quality.warnings.extend(trimmed)
         # Data limitations are only ever warnings; issues go back to the model once,
         # and are shown to the user if there is no retry left.
         attach_critique(plan, critique, will_retry=should_revise)
