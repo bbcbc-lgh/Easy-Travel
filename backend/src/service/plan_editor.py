@@ -8,7 +8,7 @@ fabricated venue with its own coordinates, price or provenance.
 
 from datetime import timedelta
 
-from src.model.schemas import Attraction, DayPlan, Hotel, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Hotel, TripPlan, TripPlanRequest
 from src.planning.budget import calculate_budget
 from src.planning.notices import attach_data_notices
 
@@ -22,7 +22,6 @@ def apply_edits(existing: TripPlan, incoming: TripPlan, request: TripPlanRequest
         raise PlanEditError(f"day count must stay at {len(existing.days)}")
 
     attraction_index = {_place_key(item): item for day in existing.days for item in day.attractions}
-    meal_index = {_name_key(item.name): item for day in existing.days for item in day.meals}
     hotel_index = {_name_key(day.hotel.name): day.hotel for day in existing.days if day.hotel}
     default_hotel = next((day.hotel for day in existing.days if day.hotel), None)
 
@@ -36,13 +35,6 @@ def apply_edits(existing: TripPlan, incoming: TripPlan, request: TripPlanRequest
             if any(_place_key(existing_item) == _place_key(stored) for existing_item in attractions):
                 continue
             attractions.append(stored)
-
-        meals: list[Meal] = []
-        for item in day.meals:
-            stored_meal = meal_index.get(_name_key(item.name))
-            if stored_meal is None:
-                raise PlanEditError(f"unknown_meal:{item.name}")
-            meals.append(stored_meal)
 
         hotel: Hotel | None = default_hotel
         if day.hotel is not None:
@@ -60,7 +52,6 @@ def apply_edits(existing: TripPlan, incoming: TripPlan, request: TripPlanRequest
                 accommodation=day.accommodation or request.accommodation,
                 hotel=hotel,
                 attractions=attractions,
-                meals=meals,
                 routes=[],
             )
         )

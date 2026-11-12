@@ -8,9 +8,14 @@ either improves them or it does not.
 from dataclasses import asdict, dataclass
 
 from src.model.schemas import TripPlan, TripPlanRequest
-from src.planning.scheduler import MEAL_COST_CAP, haversine_meters
+from src.planning.budget import DEFAULT_MEAL_ALLOWANCE, MEAL_ALLOWANCE_DAILY
+from src.planning.scheduler import haversine_meters
 
 HOTEL_NIGHTLY = {"青年旅舍": 120, "经济型酒店": 280, "舒适型酒店": 520, "高端酒店": 980}
+# A plan budget includes attraction tickets, so the reference has to include them
+# too - otherwise "budget deviation" measures a definition gap rather than real
+# overspending, and drops every case by the same amount.
+TICKET_ALLOWANCE_DAILY = 60
 TRANSPORT_DAILY = {"公共交通": 45, "打车": 120, "自驾": 180}
 
 PREFERENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -43,8 +48,6 @@ class CaseMetrics:
     max_intra_day_km: float = 0.0
     duplicate_attractions: int = 0
     day_structure_ok: bool = False
-    meals_complete_rate: float = 0.0
-    cap_violations: int = 0
     price_estimated: int = 0
     price_unknown: int = 0
     preference_hit_rate: float = 0.0
@@ -85,29 +88,9 @@ def day_structure_ok(plan: TripPlan, request: TripPlanRequest) -> bool:
     return True
 
 
-def meals_complete_rate(plan: TripPlan) -> float:
-    days = [day for day in plan.days]
-    if not days:
-        return 0.0
-    complete = sum(1 for day in days if len({meal.type for meal in day.meals}) >= 3)
-    return complete / len(days)
-
-
-def cap_violations(plan: TripPlan, request: TripPlanRequest) -> int:
-    caps = MEAL_COST_CAP.get(request.budget, MEAL_COST_CAP["中等"])
-    violations = 0
-    for day in plan.days:
-        for meal in day.meals:
-            cap = caps.get(meal.type)
-            if cap and meal.estimated_cost > cap:
-                violations += 1
-    return violations
-
-
 def price_counts(plan: TripPlan) -> tuple[int, int]:
     items = [
         *[item for day in plan.days for item in day.attractions],
-        *[item for day in plan.days for item in day.meals],
         *[day.hotel for day in plan.days if day.hotel],
     ]
     estimated = sum(1 for item in items if item.price_source == "estimated")
@@ -119,7 +102,6 @@ def hours_known_rate(plan: TripPlan) -> float:
     """Share of venues whose opening hours came from the data provider."""
     items = [
         *[item for day in plan.days for item in day.attractions],
-        *[item for day in plan.days for item in day.meals],
     ]
     if not items:
         return 0.0
@@ -161,11 +143,12 @@ def preference_hit_rate(plan: TripPlan, request: TripPlanRequest) -> float:
 
 def reference_budget(request: TripPlanRequest) -> int:
     """What this trip should roughly cost if it actually respects the budget tier."""
-    caps = MEAL_COST_CAP.get(request.budget, MEAL_COST_CAP["中等"])
-    meals = 0.8 * (caps["breakfast"] + caps["lunch"] + caps["dinner"]) * request.days
+    allowance = MEAL_ALLOWANCE_DAILY.get(request.budget, DEFAULT_MEAL_ALLOWANCE)
+    meals = allowance * request.days
     hotel = max(request.days - 1, 0) * HOTEL_NIGHTLY.get(request.accommodation, 280)
     transport = TRANSPORT_DAILY.get(request.transportation, 45) * request.days
-    return round(meals + hotel + transport)
+    tickets = TICKET_ALLOWANCE_DAILY * request.days
+    return round(meals + hotel + transport + tickets)
 
 
 def budget_deviation(plan: TripPlan, request: TripPlanRequest) -> float:
@@ -185,11 +168,10 @@ def composite_score(metrics: CaseMetrics, offline: bool = False) -> float:
     geo = 1 / (1 + metrics.avg_intra_day_km / 10)
     constraint = (
         (1.0 if metrics.day_structure_ok else 0.0)
-        + (1 - min(metrics.cap_violations / 3, 1.0))
         # A repeated stop is a defect no amount of good geometry excuses, so it
         # must not be able to score full marks on the constraint axis.
         + (1.0 if metrics.duplicate_attractions == 0 else 0.0)
-    ) / 3
+    ) / 2
     preference = metrics.preference_hit_rate
     budget = 1 / (1 + metrics.budget_deviation)
 
@@ -212,8 +194,6 @@ def measure(case_id: str, plan: TripPlan, request: TripPlanRequest, offline: boo
         max_intra_day_km=round(max(distances) / 1000, 2) if distances else 0.0,
         duplicate_attractions=duplicate_attractions(plan),
         day_structure_ok=day_structure_ok(plan, request),
-        meals_complete_rate=round(meals_complete_rate(plan), 2),
-        cap_violations=cap_violations(plan, request),
         price_estimated=estimated,
         price_unknown=unknown,
         preference_hit_rate=round(preference_hit_rate(plan, request), 2),

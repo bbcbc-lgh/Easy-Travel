@@ -13,7 +13,6 @@ from src.model.schemas import (
     DayPlan,
     Hotel,
     Location,
-    Meal,
     PriceSource,
     RouteLeg,
     TripPlan,
@@ -23,7 +22,7 @@ from src.model.schemas import (
 from src.service.cache import TTLCache
 from src.service.logging import log_event
 from src.service.qweather import QWeatherService
-from src.service.sample_data import city_center, sample_attractions, sample_hotels, sample_meals, sample_weather
+from src.service.sample_data import city_center, sample_attractions, sample_hotels, sample_weather
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ class AMapService:
         )
 
     def _cache_get(self, key: tuple) -> Any:
-        """Heterogeneous cache (POI lists, meals, route legs): values are callers' own types."""
+        """Heterogeneous cache (POI lists, route legs): values are callers' own types."""
         return self._cache.get(key) if self._cache is not None else None
 
     def _cache_set(self, key: tuple, value: Any) -> None:
@@ -207,69 +206,6 @@ class AMapService:
                 break
 
         return hotels or sample_hotels(request.city, request.accommodation, request.budget)
-
-    async def search_meals(self, request: TripPlanRequest) -> list[Meal]:
-        cache_key = ("meals", request.city, request.budget, request.days)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]
-        result = await self._search_meals_uncached(request)
-        self._cache_set(cache_key, result)
-        return result
-
-    async def _search_meals_uncached(self, request: TripPlanRequest) -> list[Meal]:
-        if not self.settings.has_amap:
-            return sample_meals(request.city, request.budget)
-
-        try:
-            pois = await self._search_pois(
-                city=request.city,
-                keywords=self._build_food_keywords(request),
-                types="050000",
-                # Eight candidates per day, not three: nine meal slots are drawn
-                # from this pool, and filters (breakfast suitability, cost cap,
-                # walking radius) remove most of it. With twelve, a real three-day
-                # plan ran out of breakfast on the last day.
-                target_count=max(24, request.days * 8),
-            )
-        except httpx.HTTPError as exc:
-            log_event(
-                logger,
-                "amap.meal_search_failed",
-                level=logging.WARNING,
-                reason=type(exc).__name__,
-                city=request.city,
-                error=str(exc),
-            )
-            return sample_meals(request.city, request.budget)
-
-        meal_types = ("breakfast", "lunch", "dinner")
-        meals: list[Meal] = []
-        seen_names: set[str] = set()
-        for index, poi in enumerate(pois):
-            name = self._text(poi.get("name"), "")
-            location = self._poi_location(poi)
-            if not name or location is None or self._normalize_name(name) in seen_names:
-                continue
-            seen_names.add(self._normalize_name(name))
-            cost, price_source = self._meal_cost(request.budget, poi)
-            meals.append(
-                Meal(
-                    type=meal_types[index % len(meal_types)],
-                    name=name,
-                    address=self._poi_address(poi, request.city),
-                    location=location,
-                    description=self._poi_category(poi) or "本地餐饮推荐",
-                    estimated_cost=cost,
-                    price_source=price_source,
-                    opening_hours=self._opening_hours(poi),
-                    source="amap",
-                )
-            )
-            if len(meals) >= max(9, request.days * 3):
-                break
-
-        return meals or sample_meals(request.city, request.budget)
 
     async def query_weather(self, request: TripPlanRequest) -> list[WeatherInfo]:
         cache_key = ("weather", request.city, request.start_date.isoformat(), request.days)
@@ -498,8 +434,7 @@ class AMapService:
         keyword_list = list(keywords)
         # Breadth before depth. Without a per-keyword slice the first keyword fills
         # the target by itself and the rest are never searched - which is how a
-        # shopping trip came back with nothing but malls, and how a meal search
-        # filled up on 火锅 places before any breakfast shop was asked for.
+        # shopping trip came back with nothing but malls.
         per_keyword = max(3, -(-target_count // max(1, len(keyword_list))))
         try:
             async with asyncio.timeout(8):
@@ -597,116 +532,6 @@ class AMapService:
                 )
                 center = None
         return sample_attractions(request.city, request.preferences, center=center)
-
-    async def search_meals_around(
-        self,
-        request: TripPlanRequest,
-        location: Location,
-        radius: int = 2000,
-        limit: int = 10,
-    ) -> list[Meal]:
-        """Meals *near a point*, not anywhere in the city.
-
-        City-wide keyword search returns restaurants 15 km from the day's sights
-        (and often without coordinates, which made distance checks useless).
-        Anchoring the search at the hotel or the day's first stop fixes both.
-        """
-        if not self.settings.has_amap:
-            return []
-
-        cache_key = (
-            "meals_around",
-            round(location.longitude, 3),
-            round(location.latitude, 3),
-            radius,
-            request.budget,
-        )
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]
-
-        pois: list[dict[str, Any]] = []
-        try:
-            async with asyncio.timeout(8):
-                for search in (self._around_pois_v5, self._around_pois_v3):
-                    try:
-                        results = await search(location, radius)
-                    except httpx.HTTPError as exc:
-                        log_event(
-                            logger,
-                            "amap.around_search_failed",
-                            level=logging.DEBUG,
-                            reason=type(exc).__name__,
-                            endpoint=search.__name__,
-                        )
-                        continue
-                    if results:
-                        pois = results
-                        break
-        except TimeoutError:
-            log_event(
-                logger,
-                "amap.around_search_timeout",
-                level=logging.WARNING,
-                radius=radius,
-                longitude=location.longitude,
-                latitude=location.latitude,
-            )
-
-        meals: list[Meal] = []
-        seen: set[str] = set()
-        for poi in pois:
-            name = self._text(poi.get("name"), "")
-            poi_location = self._poi_location(poi)
-            normalized = self._normalize_name(name)
-            if not name or poi_location is None or normalized in seen:
-                continue
-            seen.add(normalized)
-            cost, price_source = self._meal_cost(request.budget, poi)
-            meals.append(
-                Meal(
-                    type="lunch",
-                    name=name,
-                    address=self._poi_address(poi, request.city),
-                    location=poi_location,
-                    description=self._poi_category(poi) or "本地餐饮",
-                    estimated_cost=cost,
-                    price_source=price_source,
-                    opening_hours=self._opening_hours(poi),
-                    source="amap",
-                )
-            )
-            if len(meals) >= limit:
-                break
-
-        self._cache_set(cache_key, meals)
-        return meals
-
-    async def _around_pois_v5(self, location: Location, radius: int) -> list[dict[str, Any]]:
-        params = {
-            "key": self.settings.amap_web_service_key,
-            "location": self._format_location(location),
-            "radius": radius,
-            "types": "050000",
-            "page_size": 25,
-            "page_num": 1,
-            "show_fields": "business",
-        }
-        payload = await self._get_json(f"{self.v5_base_url}/place/around", params)
-        return payload.get("pois") or []
-
-    async def _around_pois_v3(self, location: Location, radius: int) -> list[dict[str, Any]]:
-        params = {
-            "key": self.settings.amap_web_service_key,
-            "location": self._format_location(location),
-            "radius": radius,
-            "types": "050000",
-            "offset": 20,
-            "page": 1,
-            "extensions": "all",
-        }
-        payload = await self._get_json(f"{self.v3_base_url}/place/around", params)
-        return payload.get("pois") or []
 
     async def _city_location(self, city: str) -> Location | None:
         district = await self._city_district(city)
@@ -817,22 +642,6 @@ class AMapService:
                     f"{request.city} 酒店",
                     f"{request.city} 住宿",
                     f"{request.city} 民宿",
-                ]
-            )
-        )
-
-    @staticmethod
-    def _build_food_keywords(request: TripPlanRequest) -> list[str]:
-        return list(
-            dict.fromkeys(
-                [
-                    f"{request.city} 早餐",
-                    f"{request.city} 早点",
-                    f"{request.city} 美食",
-                    f"{request.city} 特色餐厅",
-                    f"{request.city} 小吃",
-                    f"{request.city} 老字号",
-                    f"{request.city} {request.preferences} 餐厅",
                 ]
             )
         )
@@ -1031,26 +840,11 @@ class AMapService:
         )
 
     @staticmethod
-    def _estimate_meal_cost(budget: str, poi: dict[str, Any]) -> int:
-        cost_map = {"经济": 45, "中等": 85, "舒适": 140, "豪华": 260}
-        biz_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
-        if biz_cost:
-            return biz_cost
-        return cost_map.get(budget, 85)
-
-    @staticmethod
     def _hotel_cost(budget: str, accommodation: str, poi: dict[str, Any]) -> tuple[int, PriceSource]:
         business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
         if business_cost:
             return business_cost, "api"
         return AMapService._estimate_hotel_cost(budget, accommodation, {}), "estimated"
-
-    @staticmethod
-    def _meal_cost(budget: str, poi: dict[str, Any]) -> tuple[int, PriceSource]:
-        business_cost = AMapService._to_int(AMapService._biz_ext(poi).get("cost"))
-        if business_cost:
-            return business_cost, "api"
-        return AMapService._estimate_meal_cost(budget, {}), "estimated"
 
     @staticmethod
     def _to_int(value: object) -> int | None:

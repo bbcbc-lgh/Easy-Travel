@@ -1,6 +1,6 @@
 from datetime import date
 
-from src.model.schemas import Attraction, DayPlan, Location, Meal, PlanQuality, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Location, PlanQuality, TripPlan, TripPlanRequest
 from src.planning.critic import PlanCritic, attach_critique
 from src.planning.density import (
     DAILY_LOAD_LIMIT,
@@ -32,11 +32,6 @@ def day(*attractions: Attraction) -> DayPlan:
         transportation="公共交通",
         accommodation="经济型酒店",
         attractions=list(attractions),
-        meals=[
-            Meal(type="breakfast", name="早餐", address="杭州市", estimated_cost=20, source="amap"),
-            Meal(type="lunch", name="午餐", address="杭州市", estimated_cost=40, source="amap"),
-            Meal(type="dinner", name="晚餐", address="杭州市", estimated_cost=60, source="amap"),
-        ],
     )
 
 

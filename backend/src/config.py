@@ -2,13 +2,18 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, computed_field
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.model.llm_profile import ModelProfile
 from src.service.logging import mask_secret
 
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+#: One `.env` for the whole project, at the repository root. The backend reads it
+#: here; the frontend reads the same file through Vite's `envDir`. Keeping a single
+#: file avoids the failure this project actually hit: a key edited in one copy and
+#: silently ignored because the running process read the other.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -27,11 +32,22 @@ class Settings(BaseSettings):
     llm_total_budget_seconds: float = 150.0
     llm_profiles: list[ModelProfile] = Field(default_factory=list)
 
-    amap_web_service_key: str = Field(default="", validation_alias="AMAP_WEB_KEY")
+    # Every backend variable carries the FASTAPI_ prefix, so a single `.env` can
+    # hold the frontend's VITE_* keys too without the two sets colliding.
+    amap_web_service_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("FASTAPI_AMAP_WEB_KEY", "AMAP_WEB_KEY"),
+    )
     use_sample_data: bool = False
 
-    qweather_api_key: str = ""
-    qweather_host: str = "devapi.qweather.com"
+    qweather_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("FASTAPI_QWEATHER_API_KEY", "QWEATHER_API_KEY"),
+    )
+    qweather_host: str = Field(
+        default="devapi.qweather.com",
+        validation_alias=AliasChoices("FASTAPI_QWEATHER_HOST", "QWEATHER_HOST"),
+    )
 
     database_path: str = "data/easy_travel.sqlite3"
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from src.model.schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
+from src.model.schemas import Attraction, Hotel, TripPlan, TripPlanRequest, WeatherInfo
 
 
 @dataclass(slots=True)
@@ -10,7 +10,6 @@ class CandidatePlaces:
 
     attractions: list[Attraction]
     hotels: list[Hotel]
-    meals: list[Meal]
     weather: list[WeatherInfo]
 
 

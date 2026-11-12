@@ -44,10 +44,7 @@ def build_plan_summary(plan: TripPlan) -> str:
     ]
     for day in plan.days:
         attractions = "、".join(item.name for item in day.attractions) or "无"
-        meals = "、".join(f"{meal.type}:{meal.name}({meal.estimated_cost}元)" for meal in day.meals) or "无"
-        lines.append(
-            f"第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；餐饮 {meals}；说明：{day.description}"
-        )
+        lines.append(f"第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；说明：{day.description}")
     return "\n".join(lines)
 
 

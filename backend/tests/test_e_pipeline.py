@@ -7,7 +7,7 @@ from src.planning.contracts import CandidatePlaces
 from src.planning.rule_planner import RulePlanner
 from src.service.amap import AMapService
 from src.service.cache import TTLCache
-from src.service.sample_data import sample_attractions, sample_hotels, sample_meals, sample_weather
+from src.service.sample_data import sample_attractions, sample_hotels, sample_weather
 
 
 def request(days: int = 2) -> TripPlanRequest:
@@ -26,7 +26,6 @@ def candidates(days: int = 2) -> CandidatePlaces:
     return CandidatePlaces(
         attractions=sample_attractions(req.city, req.preferences),
         hotels=sample_hotels(req.city, req.accommodation, req.budget),
-        meals=sample_meals(req.city, req.budget),
         weather=sample_weather(req.start_date.isoformat(), days),
     )
 
@@ -42,8 +41,6 @@ def test_rule_planner_implements_the_planner_interface() -> None:
     assert plan.budget is not None
     assert plan.budget.total > 0
     # Meals are no longer planned; a day is where to go and in what order.
-    assert plan.days[0].meals == []
-    assert {meal.type for meal in plan.days[0].meals} <= {"breakfast", "lunch", "dinner"}
 
 
 def test_rule_planner_keeps_attractions_geo_ordered() -> None:

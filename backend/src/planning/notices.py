@@ -4,7 +4,7 @@ from src.model.schemas import TripPlan
 def attach_data_notices(plan: TripPlan) -> TripPlan:
     """Record, on the plan itself, that some data is only demonstrative."""
     notices: list[str] = []
-    place_items = [item for day in plan.days for item in [*day.attractions, *day.meals] if item.source == "sample"]
+    place_items: list[object] = [item for day in plan.days for item in day.attractions if item.source == "sample"]
     place_items.extend(day.hotel for day in plan.days if day.hotel and day.hotel.source == "sample")
     if place_items:
         notices.append(

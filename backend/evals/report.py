@@ -21,7 +21,6 @@ def _aggregate(results: list[EvalResult]) -> dict:
         "geo_max": max(m.max_intra_day_km for m in metrics),
         "degraded": sum(1 for m in metrics if m.degraded) / len(metrics),
         "structure": sum(1 for m in metrics if m.day_structure_ok) / len(metrics),
-        "caps": sum(m.cap_violations for m in metrics),
         "preference": mean(m.preference_hit_rate for m in metrics),
         "hours": mean(m.hours_known_rate for m in metrics),
         "budget": mean(m.budget_deviation for m in metrics),
@@ -77,8 +76,7 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
         judge = f"{result.judge['score']}" if result.judge else "-"
         lines.append(
             f"| {result.case.id} | {m.score:.1f} | {m.avg_intra_day_km:.1f} | {m.days} | "
-            f"{'是' if m.degraded else '否'} | {m.meals_complete_rate * 100:.0f}% | "
-            f"{m.cap_violations} | {m.preference_hit_rate * 100:.0f}% | "
+            f"{'是' if m.degraded else '否'} | {m.preference_hit_rate * 100:.0f}% | "
             f"{m.budget_deviation * 100:.0f}% | {judge} |"
         )
 

@@ -26,7 +26,7 @@ REASON_LABELS = {
     "too_far": "距离太远",
     "other": "其他",
 }
-TARGET_LABELS = {"attraction": "景点", "meal": "餐饮", "hotel": "酒店"}
+TARGET_LABELS = {"attraction": "景点", "hotel": "酒店"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

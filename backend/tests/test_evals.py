@@ -8,7 +8,6 @@ from evals.judge import build_plan_summary
 from evals.metrics import (
     CaseMetrics,
     budget_deviation,
-    cap_violations,
     composite_score,
     day_structure_ok,
     duplicate_attractions,
@@ -20,7 +19,7 @@ from evals.metrics import (
 )
 from evals.runner import EvalResult, build_pipeline, load_cases, run_case
 from evals.usability import CaseUsability, Failure
-from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Hotel, Location, TripPlan, TripPlanRequest
 
 
 def request(**overrides) -> TripPlanRequest:
@@ -50,18 +49,6 @@ def attraction(name: str, longitude: float, latitude: float, category: str = "�
     )
 
 
-def meal(name: str, cost: int, meal_type: str) -> Meal:
-    return Meal(
-        type=meal_type,
-        name=name,
-        address="杭州市",
-        location=Location(longitude=120.15, latitude=30.27),
-        estimated_cost=cost,
-        price_source="api",
-        source="amap",
-    )
-
-
 def build_plan(days: int = 2, day_attractions: int = 2, degraded: bool = True) -> TripPlan:
     hotel = Hotel(name="测试酒店", address="杭州市", estimated_cost=300, source="amap")
     plan_days = []
@@ -76,11 +63,6 @@ def build_plan(days: int = 2, day_attractions: int = 2, degraded: bool = True) -
                 hotel=hotel,
                 attractions=[
                     attraction(f"杭州博物馆{index}-{i}", 120.150 + i * 0.01, 30.270) for i in range(day_attractions)
-                ],
-                meals=[
-                    meal("早餐铺", 20, "breakfast"),
-                    meal("面馆", 40, "lunch"),
-                    meal("家常菜", 60, "dinner"),
                 ],
             )
         )
@@ -131,14 +113,6 @@ def test_day_structure_requires_one_to_three_attractions() -> None:
     assert day_structure_ok(good, request(days=2)) is True
     assert day_structure_ok(empty, request(days=2)) is False
     assert day_structure_ok(good, request(days=3)) is False
-
-
-def test_cap_violations_follow_the_budget_tier() -> None:
-    plan = build_plan(days=1)
-    plan.days[0].meals[0].estimated_cost = 120
-
-    assert cap_violations(plan, request(days=1, budget="中等")) == 1
-    assert cap_violations(plan, request(days=1, budget="豪华")) == 0
 
 
 def test_price_counts_distinguish_sources() -> None:

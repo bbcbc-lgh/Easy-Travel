@@ -18,7 +18,6 @@ from src.model.schemas import (
     Attraction,
     Hotel,
     Location,
-    Meal,
     PlanDecision,
     PlanDecisionDay,
     TripPlanRequest,
@@ -245,14 +244,12 @@ def test_planner_logs_model_provenance_on_success() -> None:
         source="amap",
     )
     hotel = Hotel(name="杭州测试酒店", address="杭州市上城区", estimated_cost=300, source="amap")
-    meal = Meal(type="lunch", name="知味观", address="杭州市上城区", estimated_cost=40, source="amap")
     decision = PlanDecision(
         days=[
             PlanDecisionDay(
                 day_index=0,
                 description="上午博物馆，下午湖边慢行。",
                 attractions=["浙江省博物馆"],
-                meals=["知味观"],
                 hotel="杭州测试酒店",
             )
         ],
@@ -271,7 +268,7 @@ def test_planner_logs_model_provenance_on_success() -> None:
             )
 
     with record_events() as handler:
-        plan = asyncio.run(PlannerAgent(OkGateway()).run(make_request(days=1), [attraction], [hotel], [], [meal]))
+        plan = asyncio.run(PlannerAgent(OkGateway()).run(make_request(days=1), [attraction], [hotel], []))
 
     completed = events(handler, "planner.completed")
     assert completed, "expected a planner.completed event"
@@ -285,7 +282,6 @@ def test_planner_logs_model_provenance_on_success() -> None:
     assert plan.days[0].description == "上午博物馆，下午湖边慢行。"
     assert plan.days[0].attractions[0].location.longitude == 120.155
     # Meals are no longer planned; the day is about where to go.
-    assert plan.days[0].meals == []
     assert plan.overall_suggestions == "按区域安排，减少折返。"
 
 

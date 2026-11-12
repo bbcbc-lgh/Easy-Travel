@@ -7,7 +7,6 @@ from src.model.schemas import (
     Attraction,
     DayPlan,
     Hotel,
-    Meal,
     PlanDecision,
     TripPlan,
     TripPlanRequest,
@@ -153,11 +152,6 @@ class LLMPlanner:
                 hotel = hotel_index.get(_name_key(selected.hotel)) or default_hotel
 
             ordered = optimise_order(hotel.location if hotel else None, attractions)
-            # The plan says where to go and in what order. Meals are left to the
-            # traveller: restaurant data is the least reliable input in this system
-            # and nobody wants their lunch decided by a POI category.
-            meals: list[Meal] = []
-
             days.append(
                 DayPlan(
                     date=(request.start_date + timedelta(days=day_index)).isoformat(),
@@ -167,7 +161,6 @@ class LLMPlanner:
                     accommodation=request.accommodation,
                     hotel=hotel,
                     attractions=ordered,
-                    meals=meals,
                 )
             )
 

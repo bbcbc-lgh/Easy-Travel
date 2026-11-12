@@ -1,11 +1,10 @@
 from datetime import date
 
-from src.model.schemas import Attraction, Hotel, Location, Meal, TripPlanRequest
+from src.model.schemas import Attraction, Hotel, Location, TripPlanRequest
 from src.planning.scheduler import (
     build_days,
     optimise_order,
     order_by_nearest_neighbour,
-    pick_meals,
     route_distance,
 )
 
@@ -101,78 +100,3 @@ def test_build_days_covers_all_days_and_respects_maximum() -> None:
     assert len(groups) == 3
     assert all(len(group) <= 3 for group in groups)
     assert sum(len(group) for group in groups) == 7
-
-
-def meal(name: str, cost: int, longitude: float, latitude: float, description: str = "") -> Meal:
-    return Meal(
-        type="lunch",
-        name=name,
-        address="杭州市",
-        location=Location(longitude=longitude, latitude=latitude),
-        description=description,
-        estimated_cost=cost,
-        price_source="estimated",
-        source="amap",
-    )
-
-
-def test_pick_meals_rejects_expensive_breakfast() -> None:
-    meals = [
-        meal("牛New寿喜烧", 172, 120.1505, 30.2705),
-        meal("巷口包子铺", 18, 120.1510, 30.2708),
-        meal("奎元馆", 45, 120.1520, 30.2720),
-        meal("新安土菜", 98, 120.1530, 30.2730),
-    ]
-
-    picked = pick_meals(meals, request(), HOTEL, [CLUSTER_A[0]], set())
-
-    breakfast = next(item for item in picked if item.type == "breakfast")
-    assert breakfast.name == "巷口包子铺"
-    assert breakfast.estimated_cost <= 50
-
-
-def test_pick_meals_keeps_barbecue_out_of_breakfast() -> None:
-    meals = [
-        meal("炭火烧肉", 40, 120.1502, 30.2702),
-        meal("老字号早点", 25, 120.1600, 30.2800),
-    ]
-
-    picked = pick_meals(meals, request(), HOTEL, [], set())
-
-    breakfast = next(item for item in picked if item.type == "breakfast")
-    assert breakfast.name == "老字号早点"
-
-
-def test_pick_meals_respects_budget_caps_for_lunch_and_dinner() -> None:
-    meals = [
-        meal("平价面馆", 30, 120.1500, 30.2700),
-        meal("高档日料", 441, 120.1501, 30.2701),
-        meal("家常菜", 70, 120.1502, 30.2702),
-    ]
-
-    picked = pick_meals(meals, request(budget="经济"), HOTEL, [CLUSTER_A[0]], set())
-
-    assert picked
-    assert all(item.estimated_cost <= 80 for item in picked)
-    assert all(item.name != "高档日料" for item in picked)
-
-
-def test_meals_are_not_reused_across_days() -> None:
-    meals = [
-        meal("早餐铺", 15, 120.1500, 30.2700),
-        meal("面馆", 35, 120.1501, 30.2701),
-        meal("小炒", 60, 120.1502, 30.2702),
-        meal("粥店", 20, 120.1503, 30.2703),
-        meal("饺子馆", 40, 120.1504, 30.2704),
-        meal("烧烤摊", 55, 120.1505, 30.2705),
-    ]
-    used: set[str] = set()
-
-    first = pick_meals(meals, request(), HOTEL, [CLUSTER_A[0]], used)
-    second = pick_meals(meals, request(), HOTEL, [CLUSTER_A[1]], used)
-
-    first_names = {item.name for item in first}
-    second_names = {item.name for item in second}
-    assert len(first_names) == 3
-    assert len(second_names) == 3
-    assert first_names.isdisjoint(second_names)

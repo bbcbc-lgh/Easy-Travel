@@ -13,7 +13,6 @@ from src.config import settings
 from src.model.schemas import (
     HealthResponse,
     PlanFeedback,
-    PlanPatch,
     ReviseRequest,
     ReviseResponse,
     TripPlan,
@@ -346,15 +345,6 @@ async def update_trip_plan(
     return updated
 
 
-def _days_needing_meal_anchor(patch: PlanPatch) -> set[int]:
-    """Days whose meals depend on changed places and should be re-anchored."""
-    return {
-        edit.day_index
-        for edit in patch.days
-        if edit.meals is not None or edit.add_attractions or edit.remove_attractions or edit.hotel
-    }
-
-
 def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest, plan: TripPlan) -> TripPlan:
     """Re-score an edited plan and re-attach what the critic found.
 
@@ -375,9 +365,7 @@ def _place_key(name: str) -> str:
 
 def _feedback_names(day, target: str) -> set[str]:
     """Names actually present for that target on that day."""
-    if target == "meal":
-        items = list(day.meals)
-    elif target == "hotel":
+    if target == "hotel":
         items = [day.hotel] if day.hotel else []
     else:
         items = list(day.attractions)

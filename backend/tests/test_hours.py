@@ -1,6 +1,6 @@
 from datetime import date
 
-from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Hotel, Location, TripPlan, TripPlanRequest
 from src.planning.critic import PlanCritic
 from src.planning.hours import closed_weekdays, is_closed_on, weekday_name
 from src.service.amap import AMapService
@@ -67,11 +67,6 @@ def build_plan(day_date: str, hours: str) -> TripPlan:
                 accommodation="经济型酒店",
                 hotel=hotel,
                 attractions=[attraction],
-                meals=[
-                    Meal(type="breakfast", name="早餐", address="杭州市", estimated_cost=20, source="amap"),
-                    Meal(type="lunch", name="午餐", address="杭州市", estimated_cost=40, source="amap"),
-                    Meal(type="dinner", name="晚餐", address="杭州市", estimated_cost=60, source="amap"),
-                ],
             )
         ],
         overall_suggestions="测试",

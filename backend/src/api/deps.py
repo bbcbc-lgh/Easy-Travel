@@ -56,15 +56,13 @@ class TripPlanningPipeline:
         return CandidatePlaces(
             attractions=attractions,
             hotels=hotels,
-            meals=[],
             weather=weather_info,
         )
 
     async def collect_for_edit(self, request: TripPlanRequest, plan: TripPlan) -> CandidatePlaces:
         """Candidates for a conversational edit.
 
-        Meals are no longer part of a plan, so this is the same city-wide pool the
-        generation path uses.
+        The same city-wide pool the generation path uses.
         """
         return await self.collect(request)
 

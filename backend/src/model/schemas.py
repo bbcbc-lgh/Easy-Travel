@@ -36,21 +36,6 @@ class Attraction(BaseModel):
     source: PlaceSource = Field(default="sample", description="place data source")
 
 
-class Meal(BaseModel):
-    type: Literal["breakfast", "lunch", "dinner", "snack"] = Field(..., description="餐饮类型")
-    name: str = Field(..., description="餐饮名称")
-    address: str | None = Field(default=None, description="地址")
-    location: Location | None = Field(default=None, description="经纬度坐标")
-    description: str | None = Field(default=None, description="描述")
-    estimated_cost: int = Field(default=0, ge=0, description="预估费用(元)")
-    price_source: PriceSource = Field(
-        default="estimated",
-        description="人均价格来源：接口返回/规则估算/无法确认",
-    )
-    opening_hours: str | None = Field(default=None, description="营业时间原文，来源于数据接口")
-    source: PlaceSource = Field(default="sample", description="meal data source")
-
-
 class Hotel(BaseModel):
     name: str = Field(..., description="酒店名称")
     address: str = Field(default="", description="酒店地址")
@@ -95,7 +80,6 @@ class DayEdit(BaseModel):
     remove_attractions: list[str] = Field(default_factory=list, description="要移除的景点名称")
     add_attractions: list[str] = Field(default_factory=list, description="要新增的景点名称，必须来自候选列表")
     description: str | None = Field(default=None, description="新的当日说明；为空表示不改")
-    meals: list[str] | None = Field(default=None, description="替换当天的餐饮，必须来自候选列表；为空表示不改")
     hotel: str | None = Field(default=None, description="更换酒店，必须来自候选列表；为空表示不改")
 
 
@@ -113,10 +97,6 @@ class PlanDecisionDay(BaseModel):
     day_index: int = Field(..., ge=0, description="第几天(从0开始)")
     description: str = Field(..., min_length=1, description="当日安排与理由")
     attractions: list[str] = Field(default_factory=list, description="只能取候选景点名称")
-    meals: list[str] = Field(
-        default_factory=list,
-        description="已废弃：餐食不再进规划。保留字段仅为兼容旧数据，模型不应填写",
-    )
     hotel: str | None = Field(default=None, description="只能取候选酒店名称")
 
 
@@ -143,7 +123,6 @@ class DayPlan(BaseModel):
     accommodation: str = Field(..., description="住宿安排")
     hotel: Hotel | None = Field(default=None, description="酒店信息")
     attractions: list[Attraction] = Field(default_factory=list, description="景点列表")
-    meals: list[Meal] = Field(default_factory=list, description="餐饮安排")
     routes: list[RouteLeg] = Field(default_factory=list, description="当日路线估算")
 
 
@@ -270,7 +249,7 @@ class ReviseResponse(BaseModel):
 #: Why a traveller says a stop is wrong. Kept as a closed set so the summary can
 #: count categories instead of reading prose.
 FeedbackReason = Literal["too_packed", "wrong_place", "closed", "too_far", "other"]
-FeedbackTarget = Literal["attraction", "meal", "hotel"]
+FeedbackTarget = Literal["attraction", "hotel"]
 
 
 class PlanFeedback(BaseModel):

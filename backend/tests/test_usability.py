@@ -8,7 +8,7 @@ or DAILY_LOAD_LIMIT, the eval follows without a second edit.
 from datetime import date
 
 from evals.usability import RULES, Failure, assess, summarise
-from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Hotel, Location, TripPlan, TripPlanRequest
 from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS
 from src.planning.density import DAILY_LOAD_LIMIT
 
@@ -47,27 +47,10 @@ def attraction(
     )
 
 
-def meal(meal_type: str, cost: int = 30, name: str = "小店") -> Meal:
-    return Meal(
-        type=meal_type,  # type: ignore[arg-type]
-        name=name,
-        address="杭州市",
-        location=HANGZHOU,
-        estimated_cost=cost,
-        price_source="api",
-        source="amap",
-    )
-
-
-def three_meals(cost: int = 30) -> list[Meal]:
-    return [meal("breakfast", cost), meal("lunch", cost), meal("dinner", cost)]
-
-
 def day(
     index: int = 0,
     *,
     attractions: list[Attraction] | None = None,
-    meals: list[Meal] | None = None,
     when: str = "2026-12-01",
 ) -> DayPlan:
     return DayPlan(
@@ -78,7 +61,6 @@ def day(
         accommodation="经济型酒店",
         hotel=Hotel(name="甲酒店", address="杭州市", estimated_cost=300, source="amap"),
         attractions=[attraction("景点A"), attraction("景点B")] if attractions is None else attractions,
-        meals=three_meals() if meals is None else meals,
     )
 
 

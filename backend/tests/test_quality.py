@@ -1,5 +1,5 @@
 from src.agent.review_agent import ReviewAgent
-from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
+from src.model.schemas import Attraction, DayPlan, Hotel, Location, TripPlan, TripPlanRequest
 from src.service.amap import AMapService
 from src.service.sample_data import sample_attractions
 
@@ -42,17 +42,6 @@ def build_plan(*, degraded: bool = False, price_source: str = "api") -> TripPlan
         price_source=price_source,
         source="amap",
     )
-    meals = [
-        Meal(
-            type=meal_type,
-            name=f"餐厅{index}",
-            address="杭州市上城区",
-            estimated_cost=60,
-            price_source=price_source,
-            source="amap",
-        )
-        for index, meal_type in enumerate(("breakfast", "lunch", "dinner"))
-    ]
     return TripPlan(
         city="杭州",
         start_date="2026-11-20",
@@ -66,7 +55,6 @@ def build_plan(*, degraded: bool = False, price_source: str = "api") -> TripPlan
                 accommodation="经济型酒店",
                 hotel=hotel,
                 attractions=[attraction_one, attraction_two],
-                meals=meals,
             )
         ],
         overall_suggestions="测试",
@@ -127,11 +115,6 @@ def test_ticket_price_is_not_invented_for_unknown_category() -> None:
 def test_ticket_price_is_marked_estimated_for_known_categories() -> None:
     assert AMapService._ticket_price("风景名胜;公园广场;公园") == (30, "estimated")
     assert AMapService._ticket_price("科教文化服务;博物馆;博物馆") == (50, "estimated")
-
-
-def test_meal_cost_uses_api_price_when_available() -> None:
-    assert AMapService._meal_cost("中等", {"biz_ext": {"cost": "120"}}) == (120, "api")
-    assert AMapService._meal_cost("中等", {}) == (85, "estimated")
 
 
 def test_hotel_cost_uses_api_price_when_available() -> None:

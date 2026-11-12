@@ -9,7 +9,6 @@ from src.model.schemas import (
     DayPlan,
     Hotel,
     Location,
-    Meal,
     PlanPatch,
     TripPlan,
     TripPlanRequest,
@@ -54,18 +53,6 @@ def hotel(name: str = "测试酒店") -> Hotel:
     )
 
 
-def meal(name: str, cost: int = 40, meal_type: str = "lunch") -> Meal:
-    return Meal(
-        type=meal_type,
-        name=name,
-        address="杭州市",
-        location=Location(longitude=120.15, latitude=30.27),
-        estimated_cost=cost,
-        price_source="api",
-        source="amap",
-    )
-
-
 def build_plan() -> TripPlan:
     days = []
     for index in range(2):
@@ -81,7 +68,6 @@ def build_plan() -> TripPlan:
                     attraction(f"博物馆{index}A", 120.15 + index * 0.01),
                     attraction(f"博物馆{index}B", 120.15 + index * 0.01 + 0.002),
                 ],
-                meals=[meal("面馆", 40), meal("小炒", 60), meal("早餐铺", 20)],
             )
         )
     plan = TripPlan(
@@ -103,7 +89,6 @@ def candidates() -> CandidatePlaces:
             attraction("美术馆新", 120.17, price=50),
         ],
         hotels=[hotel("测试酒店"), hotel("新酒店")],
-        meals=[meal("面馆", 40), meal("小炒", 60), meal("早餐铺", 20), meal("新餐厅", 45)],
         weather=[],
     )
 
@@ -164,15 +149,6 @@ def test_patch_updates_description_and_overall_suggestions() -> None:
     assert revised.days[1].description == "第 2 天改为室内展览"
     assert revised.days[0].description == "第 1 天"
     assert revised.overall_suggestions == "新的整体建议"
-
-
-def test_patch_can_replace_meals_from_candidates() -> None:
-    revised = apply(
-        PlanPatch(days=[DayEdit(day_index=0, meals=["新餐厅"])], reply="换了餐厅"),
-    )
-
-    names = [item.name for item in revised.days[0].meals]
-    assert "新餐厅" in names
 
 
 def test_unknown_attraction_in_patch_is_rejected() -> None:

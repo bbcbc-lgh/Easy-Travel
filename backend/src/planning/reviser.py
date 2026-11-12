@@ -1,7 +1,7 @@
 """Conversational edits: the model proposes a patch, the server applies it.
 
 The model never returns a full itinerary. It returns *changes* — which places to
-drop or add on which day — and every derived field (order, meals, budget,
+drop or add on which day — and every derived field (order, budget,
 routes, score) is recomputed here from the data layer.
 """
 
@@ -12,7 +12,7 @@ from src.model.schemas import DayEdit, DayPlan, PlanPatch, TripPlan, TripPlanReq
 from src.planning.budget import calculate_budget
 from src.planning.contracts import CandidatePlaces
 from src.planning.notices import attach_data_notices
-from src.planning.scheduler import optimise_order, pick_meals
+from src.planning.scheduler import optimise_order
 from src.service.llm_gateway import LLMGateway
 from src.service.logging import log_event
 
@@ -62,9 +62,7 @@ class PlanReviser:
     ) -> TripPlan:
         attraction_index = _index([*candidates.attractions, *[item for day in plan.days for item in day.attractions]])
         hotel_index = _index([*candidates.hotels, *[day.hotel for day in plan.days if day.hotel]])
-        meal_candidates = candidates.meals or [meal for day in plan.days for meal in day.meals]
         edits: dict[int, DayEdit] = {edit.day_index: edit for edit in patch.days}
-        used_meal_keys: set[str] = set()
 
         days: list[DayPlan] = []
         for day in plan.days:
@@ -95,21 +93,6 @@ class PlanReviser:
 
             ordered = optimise_order(hotel.location if hotel else None, attractions)
 
-            meals = day.meals
-            if edit is not None and edit.meals is not None:
-                meals = pick_meals(
-                    meal_candidates,
-                    request,
-                    hotel,
-                    ordered,
-                    used_meal_keys,
-                    preferred=edit.meals,
-                )
-                if not meals:
-                    raise PatchError(f"day_{day.day_index}_meals_unavailable")
-            else:
-                used_meal_keys.update(_name_key(meal.name) for meal in meals)
-
             days.append(
                 DayPlan(
                     date=day.date,
@@ -119,7 +102,6 @@ class PlanReviser:
                     accommodation=day.accommodation,
                     hotel=hotel,
                     attractions=ordered,
-                    meals=meals,
                     routes=[],
                 )
             )
@@ -143,12 +125,12 @@ def _system_prompt() -> str:
     return (
         "你是行程编辑助手。用户会对现有行程提出修改要求，你只输出需要变化的字段。\n"
         '只输出 JSON：{"days":[{"day_index":0,"remove_attractions":["景点名"],'
-        '"add_attractions":["景点名"],"description":"新的当日说明","meals":["餐饮名"],'
+        '"add_attractions":["景点名"],"description":"新的当日说明",'
         '"hotel":"酒店名"}],"overall_suggestions":"整体建议","reply":"一句话说明改了什么"}\n'
         "规则：\n"
         "1. 只列出需要改动的天，没提到的天不要出现；\n"
         "2. remove_attractions 必须来自当前行程，add_attractions 必须来自候选景点；\n"
-        "3. meals / hotel 如不修改则省略该字段；meals 只能取候选餐饮；\n"
+        "3. hotel 如不修改则省略该字段；\n"
         "4. 每天最终保留 1-3 个景点，不要全部删掉；\n"
         "5. 不要输出坐标、价格或 Markdown；reply 用中文，不超过 40 字。"
     )
@@ -173,13 +155,11 @@ def _user_prompt(
     ]
     for day in plan.days:
         attractions = "、".join(item.name for item in day.attractions) or "无"
-        meals = "、".join(f"{meal.type}:{meal.name}" for meal in day.meals) or "无"
         hotel = day.hotel.name if day.hotel else "无"
-        lines.append(f"- 第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；餐饮 {meals}；酒店 {hotel}")
+        lines.append(f"- 第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；酒店 {hotel}")
     lines += [
         "",
         f"候选景点：{json.dumps([item.name for item in candidates.attractions[:24]], ensure_ascii=False)}",
-        f"候选餐饮：{json.dumps([item.name for item in candidates.meals[:12]], ensure_ascii=False)}",
         f"候选酒店：{json.dumps([item.name for item in candidates.hotels[:6]], ensure_ascii=False)}",
     ]
     return "\n".join(lines)
@@ -188,9 +168,6 @@ def _user_prompt(
 def _build_validator(plan: TripPlan, candidates: CandidatePlaces):
     current_attractions = {_name_key(item.name) for day in plan.days for item in day.attractions}
     candidate_attractions = {_name_key(item.name) for item in candidates.attractions}
-    meal_names = {_name_key(item.name) for item in candidates.meals} | {
-        _name_key(meal.name) for day in plan.days for meal in day.meals
-    }
     hotel_names = {_name_key(item.name) for item in candidates.hotels} | {
         _name_key(day.hotel.name) for day in plan.days if day.hotel
     }
@@ -214,9 +191,6 @@ def _build_validator(plan: TripPlan, candidates: CandidatePlaces):
             for name in edit.add_attractions:
                 if _name_key(name) not in candidate_attractions:
                     raise ValueError(f"cannot add {name!r}: not in the candidate list")
-            for name in edit.meals or []:
-                if _name_key(name) not in meal_names:
-                    raise ValueError(f"meal {name!r} is not in the candidate list")
             if edit.hotel and _name_key(edit.hotel) not in hotel_names:
                 raise ValueError(f"hotel {edit.hotel!r} is not in the candidate list")
         return patch
