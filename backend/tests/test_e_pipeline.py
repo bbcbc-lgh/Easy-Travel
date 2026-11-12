@@ -140,3 +140,13 @@ def test_weather_is_cached(monkeypatch) -> None:
     asyncio.run(service.query_weather(req))
 
     assert calls["count"] == 1
+
+
+def test_rule_planner_prose_does_not_name_stops() -> None:
+    """Prose that names stops goes stale the moment a stop is trimmed."""
+    plan = asyncio.run(RulePlanner().plan(request(), candidates(), feedback=None))
+
+    for day in plan.days:
+        assert day.attractions, "fixture should produce at least one stop"
+        for item in day.attractions:
+            assert item.name not in day.description

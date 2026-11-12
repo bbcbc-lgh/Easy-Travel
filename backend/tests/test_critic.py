@@ -95,3 +95,23 @@ def test_critic_accepts_a_reasonable_day() -> None:
     critique = PlanCritic().review(request(), plan)
 
     assert critique.needs_revision is False
+
+
+def test_a_description_that_names_a_stop_is_an_issue() -> None:
+    """The plan can be re-cut after the model writes prose, so the prose must not
+    name stops: '傍晚去万达广场' stayed on the page after the stop was trimmed."""
+    plan = plan_with(attractions=[attraction("观山湖公园")])
+    plan.days[0].description = "上午看展，傍晚到观山湖公园散步。"
+
+    critique = PlanCritic().review(request(), plan)
+
+    assert any("说明里出现了具体场所名" in issue for issue in critique.issues)
+
+
+def test_a_description_about_shape_and_pace_is_fine() -> None:
+    plan = plan_with(attractions=[attraction("观山湖公园")])
+    plan.days[0].description = "上午看展，午后在湖边散步，节奏轻松。"
+
+    critique = PlanCritic().review(request(), plan)
+
+    assert not any("说明里出现了具体场所名" in issue for issue in critique.issues)

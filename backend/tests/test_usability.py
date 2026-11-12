@@ -153,6 +153,7 @@ def test_every_rule_has_a_stable_key() -> None:
         "day_load",
         "open_on_the_day",
         "no_duplicates",
+        "description_is_stable",
     ]
 
 
@@ -177,3 +178,22 @@ def test_summary_of_nothing_is_zero_not_a_crash() -> None:
 
     assert summary.cases == 0
     assert summary.usable_ratio == 0.0
+
+
+def test_a_description_naming_a_stop_is_unusable() -> None:
+    """If the plan is re-cut, prose that names a stop becomes a lie."""
+    day_plan = day()
+    day_plan.description = f"上午去{day_plan.attractions[0].name}，下午休息。"
+
+    verdict = assess(trip(day_plan), request(), "named")
+
+    assert "description_is_stable" in {f.rule for f in verdict.failures}
+
+
+def test_a_description_about_pace_is_fine() -> None:
+    day_plan = day()
+    day_plan.description = "上午看展，午后散步，节奏轻松。"
+
+    verdict = assess(trip(day_plan), request(), "pace")
+
+    assert verdict.usable is True

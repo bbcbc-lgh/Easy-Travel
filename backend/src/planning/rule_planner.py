@@ -32,8 +32,7 @@ class RulePlanner:
         days: list[DayPlan] = []
         for day_index, group in enumerate(groups):
             if group:
-                names = "、".join(item.name for item in group)
-                description = f"第 {day_index + 1} 天按距离就近安排 {names}，减少往返，余下时间留给周边慢行。"
+                description = f"第 {day_index + 1} 天按距离就近串联 {len(group)} 个点，减少往返，余下时间留给周边慢行。"
             else:
                 description = "候选景点不足，今天预留为自由探索和休息。"
             days.append(

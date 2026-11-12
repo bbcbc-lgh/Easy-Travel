@@ -132,7 +132,8 @@ def _system_prompt() -> str:
         "2. remove_attractions 必须来自当前行程，add_attractions 必须来自候选景点；\n"
         "3. hotel 如不修改则省略该字段；\n"
         "4. 每天最终保留 1-3 个景点，不要全部删掉；\n"
-        "5. 不要输出坐标、价格或 Markdown；reply 用中文，不超过 40 字。"
+        "5. description 只写活动类型、片区和节奏，不要出现任何具体场所名称；\n"
+        "6. 不要输出坐标、价格或 Markdown；reply 用中文，不超过 40 字。"
     )
 
 

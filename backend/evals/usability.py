@@ -35,6 +35,7 @@ RULES: tuple[Rule, ...] = (
     Rule("day_load", "单日强度不超过建议上限"),
     Rule("open_on_the_day", "当天没有闭馆地点"),
     Rule("no_duplicates", "没有重复景点"),
+    Rule("description_is_stable", "说明不与景点名绑定"),
 )
 
 RULE_BY_KEY = {rule.key: rule for rule in RULES}
@@ -121,6 +122,17 @@ def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsabil
                     )
                 )
 
+    for day in plan.days:
+        named = _named_stops(day)
+        if named:
+            label = day.day_index + 1
+            failures.append(
+                Failure(
+                    "description_is_stable",
+                    f"第 {label} 天的说明写到了具体场所（{'、'.join(named)}），行程一变就会自相矛盾",
+                )
+            )
+
     seen: set[str] = set()
     for day in plan.days:
         for attraction in day.attractions:
@@ -146,3 +158,14 @@ def summarise(results: list[CaseUsability]) -> UsabilitySummary:
         failures_by_rule=failures_by_rule,
         unusable_cases=unusable,
     )
+
+
+def _named_stops(day: DayPlan) -> list[str]:
+    """Stops whose name appears in the day's own description."""
+    haystack = "".join(day.description.split())
+    found: list[str] = []
+    for item in day.attractions:
+        key = "".join(item.name.split())
+        if len(key) >= 2 and key in haystack and item.name not in found:
+            found.append(item.name)
+    return found

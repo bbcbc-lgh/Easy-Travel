@@ -67,6 +67,16 @@ class PlanCritic:
 
             critique.issues.extend(self._closure_issues(day))
 
+            named = _names_in_text(day)
+            if named:
+                # The description has to stay true after post-processing. It used to
+                # name a stop that the load trim then dropped, leaving the day
+                # describing a place it no longer contained.
+                critique.issues.append(
+                    f"第 {label} 天的说明里出现了具体场所名（{'、'.join(named)}），"
+                    "说明只写活动类型、片区和节奏，不要提任何具体场所。"
+                )
+
             if day_load(day) > DAILY_LOAD_LIMIT:
                 # An issue, not a note: the model chose these stops, so it can
                 # choose fewer. Filed as a note it only warned the user; a live
@@ -112,6 +122,27 @@ class PlanCritic:
                     "营业时间显示当天不开放，请换到别的天或换成其他地点。"
                 )
         return issues
+
+
+def _names_in_text(day: DayPlan) -> list[str]:
+    """Venue names from this day that appear in its description.
+
+    Compared ignoring whitespace and with a two-character floor: a single character
+    match would fire on any shared character, and short names like "鼓楼" are real
+    places that should still count.
+    """
+    haystack = "".join(day.description.split())
+    found: list[str] = []
+    for item in day.attractions:
+        key = "".join(item.name.split())
+        if len(key) >= 2 and key in haystack and item.name not in found:
+            found.append(item.name)
+    hotel = day.hotel
+    if hotel is not None:
+        key = "".join(hotel.name.split())
+        if len(key) >= 2 and key in haystack and hotel.name not in found:
+            found.append(hotel.name)
+    return found
 
 
 def attach_critique(plan: TripPlan, critique: Critique, *, will_retry: bool) -> TripPlan:
