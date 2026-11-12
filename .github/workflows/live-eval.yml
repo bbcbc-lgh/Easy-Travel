@@ -1,4 +1,4 @@
-name: Live eval
+﻿name: Live eval
 
 # Manual, because it spends real money: a full run is `limit` real plan
 # generations against whatever model the repository is configured with. Run it
@@ -94,7 +94,7 @@ jobs:
         run: |
           if [ -f live-eval.md ]; then cat live-eval.md >> "$GITHUB_STEP_SUMMARY"; fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-eval-report
