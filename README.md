@@ -25,10 +25,13 @@ cd Easy-Travel
 ### 1. 填配置
 
 ```bash
-cp backend/.env.example backend/.env
+cp .env.example .env
 ```
 
-打开 `backend/.env`，至少填一项能用的模型配置：
+**全项目只有这一份 `.env`**，放在仓库根目录：后端由 pydantic-settings 读取，前端由 Vite 的
+`envDir` 读取同一个文件。只有 `VITE_` 开头的键会被编译进浏览器包，服务端密钥不会漏到前端。
+
+打开 `.env`，至少填一项能用的模型配置：
 
 ```env
 LLM_API_KEY=你的密钥
@@ -39,7 +42,15 @@ LLM_MODEL=deepseek-chat
 再填一个高德 Web 服务 Key（个人开发者免费申请）：
 
 ```env
-AMAP_WEB_KEY=你的高德Key
+FASTAPI_AMAP_WEB_KEY=你的高德Key
+```
+
+想要结果页的地图可用，还需要**另一个**高德 Key——类型必须选「Web端(JS API)」，并把它对应的
+安全密钥一起填上。这两个 Key 不通用：`FASTAPI_AMAP_WEB_KEY` 给后端查 POI，`VITE_AMAP_JS_KEY` 给浏览器画图。
+
+```env
+VITE_AMAP_JS_KEY=你的JS API Key
+VITE_AMAP_SECURITY_CODE=该Key对应的安全密钥
 ```
 
 ### 2. 启动
@@ -117,9 +128,9 @@ npm run dev
 | `LLM_MAX_TOKENS` | 否 | 输出上限，`0` = 服务商默认。推理型模型的思考 token 也占这个预算 |
 | `LLM_REASONING_EFFORT` | 否 | 推理模型的思考预算：`minimal` / `low` / `medium` / `high`。实测 `minimal` 把 3 天行程从约 45s 降到约 28s，评分不变；留空用服务商默认 |
 | `LLM_PROFILES` | 否 | 多模型回退链（JSON 数组），不填则由 `LLM_MODEL` 生成单个 |
-| `AMAP_WEB_KEY` | 建议 | 高德 Web 服务 Key；留空则用样例地点 |
-| `QWEATHER_API_KEY` | 否 | 和风天气 Key；配置后优先取预报 |
-| `QWEATHER_HOST` | 否 | **必须填控制台给你的 API Host**（形如 `abc123.re.qweatherapi.com`）。旧的 `devapi.qweather.com` 对新 Key 会返回 `403 Invalid Host` |
+| `FASTAPI_AMAP_WEB_KEY` | 建议 | 高德 Web 服务 Key；留空则用样例地点 |
+| `FASTAPI_QWEATHER_API_KEY` | 否 | 和风天气 Key；配置后优先取预报 |
+| `FASTAPI_QWEATHER_HOST` | 否 | **必须填控制台给你的 API Host**（形如 `abc123.re.qweatherapi.com`）。旧的 `devapi.qweather.com` 对新 Key 会返回 `403 Invalid Host` |
 | `USE_SAMPLE_DATA` | 否 | `true` 强制离线：不调模型、不调高德，全部走本地样例 |
 | `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/easy_travel.sqlite3` |
 | `PLAN_DAILY_LIMIT` | 否 | 本机成本保护：同一浏览器每日生成次数，默认 20。**失败或中断的生成会退还次数**，只有真正出结果的才计数 |
@@ -207,10 +218,10 @@ python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 模型没生效。检查 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`，然后看后端日志里的 `llm.failed` 一行，原因会写清楚（超时、鉴权、模型名错误等）。
 
 **高德相关数据都是“演示数据”？**
-`AMAP_WEB_KEY` 没读到。注意变量名是 `AMAP_WEB_KEY`，不是旧版的 `FASTAPI_AMAP_WEB_KEY`。
+`FASTAPI_AMAP_WEB_KEY` 没读到。后端变量统一带 `FASTAPI_` 前缀，和前端 `VITE_*` 放在同一个 `.env` 里。旧名 `AMAP_WEB_KEY` 仍然兼容，但新配置请用带前缀的名字。
 
 **天气报 `403 Invalid Host`？**
-和风现在按账号分配 API Host，把 `QWEATHER_HOST` 改成控制台里的那个主机名。
+和风现在按账号分配 API Host，把 `FASTAPI_QWEATHER_HOST` 改成控制台里的那个主机名。
 
 **历史计划不见了？**
 浏览器数据被清过，匿名 ID 变了。这是当前设计的已知限制。

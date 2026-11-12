@@ -17,9 +17,9 @@ fi
 echo "[setup] installing backend dependencies ..."
 "$python" -m pip install -q -r "$backend/requirements.txt"
 
-if [ ! -f "$backend/.env" ]; then
-  cp "$backend/.env.example" "$backend/.env"
-  echo "[setup] created backend/.env — fill in LLM_API_KEY / AMAP_WEB_KEY, then restart."
+if [ ! -f "$root/.env" ]; then
+  cp "$root/.env.example" "$root/.env"
+  echo "[setup] created .env — fill in LLM_API_KEY / AMAP_WEB_KEY, then restart."
 fi
 
 if [ ! -d "$frontend/node_modules" ]; then

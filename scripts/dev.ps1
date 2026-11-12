@@ -15,9 +15,9 @@ if (-not (Test-Path $python)) {
 Write-Host "[setup] installing backend dependencies ..." -ForegroundColor Cyan
 & $python -m pip install -q -r (Join-Path $backend "requirements.txt")
 
-if (-not (Test-Path (Join-Path $backend ".env"))) {
-    Copy-Item (Join-Path $backend ".env.example") (Join-Path $backend ".env")
-    Write-Host "[setup] created backend\.env — fill in LLM_API_KEY / AMAP_WEB_KEY, then restart." -ForegroundColor Yellow
+if (-not (Test-Path (Join-Path $root ".env"))) {
+    Copy-Item (Join-Path $root ".env.example") (Join-Path $root ".env")
+    Write-Host "[setup] created .env — fill in LLM_API_KEY / AMAP_WEB_KEY, then restart." -ForegroundColor Yellow
 }
 
 if (-not (Test-Path (Join-Path $frontend "node_modules"))) {

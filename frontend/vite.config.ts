@@ -1,8 +1,15 @@
 import vue from '@vitejs/plugin-vue'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 export default defineConfig({
   plugins: [vue()],
+  // One `.env` for the whole project, shared with the backend. Vite only exposes
+  // `VITE_`-prefixed keys to the bundle, so server secrets in that file stay out
+  // of the browser build.
+  envDir: repoRoot,
   optimizeDeps: {
     // Both are imported lazily on export. Left out, the dev server discovers them
     // on first use and reloads the page - which is a surprising thing to have

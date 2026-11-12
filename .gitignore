@@ -1,8 +1,14 @@
-﻿# Python
+﻿# Configuration: one shared file at the repository root (see README)
+.env
+.env.*
+!.env.example
+backend/.env.migrated
+frontend/.env.migrated
+
+# Python
 backend/.venv/
 backend/__pycache__/
 backend/.pytest_cache/
-backend/.env
 backend/data/
 *.pyc
 .logs/
@@ -10,7 +16,6 @@ backend/data/
 # Node
 frontend/node_modules/
 frontend/dist/
-frontend/.env
 frontend/tsconfig.tsbuildinfo
 frontend/src/**/*.js
 frontend/src/**/*.js.map
