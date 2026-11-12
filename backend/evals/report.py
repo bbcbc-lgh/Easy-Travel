@@ -1,10 +1,12 @@
 """Renders eval results as a Markdown report."""
 
+from collections import Counter
 from datetime import datetime
 from statistics import mean
 
 from evals.metrics import CaseMetrics
 from evals.runner import EvalResult
+from evals.usability import RULES
 
 
 def _aggregate(results: list[EvalResult]) -> dict:
@@ -102,6 +104,31 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
         lines += ["", "## 失败用例", ""]
         for result in errors:
             lines.append(f"- `{result.case.id}`：{result.error}")
+
+    usability = [result for result in results if result.usability is not None]
+    if usability:
+        verdicts = [result.usability for result in usability if result.usability is not None]
+        usable = [verdict for verdict in verdicts if verdict.usable]
+        counts = Counter(failure.rule for verdict in verdicts for failure in verdict.failures)
+        lines += [
+            "",
+            "## 能否直接照着走",
+            "",
+            f"**{len(usable)}/{len(verdicts)}** 份行程可以按原样执行（{len(usable) / len(verdicts):.0%}）。",
+            "每一条检查都复用应用自身的阈值，不调用模型、不花钱。",
+            "",
+            "| 检查 | 未通过次数 |",
+            "| --- | ---: |",
+        ]
+        for rule in RULES:
+            lines.append(f"| {rule.label} | {counts.get(rule.key, 0)} |")
+
+        broken = [verdict for verdict in verdicts if not verdict.usable]
+        if broken:
+            lines += ["", "### 走不通的地方", ""]
+            for verdict in broken:
+                shown = "；".join(failure.message for failure in verdict.failures[:3])
+                lines.append(f"- **{verdict.case_id}**：{shown}")
 
     judged = [result for result in results if result.judge]
     if judged:

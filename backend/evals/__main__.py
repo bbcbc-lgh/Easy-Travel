@@ -12,6 +12,7 @@ from pathlib import Path
 from evals.gates import summarise, violations
 from evals.report import render_report
 from evals.runner import EvalResult, build_pipeline, load_cases, run_all
+from evals.usability import RULES
 from src.service.logging import configure_logging
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +32,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="fail when more than this share of cases fell back to the rule planner",
+    )
+    parser.add_argument(
+        "--min-usable-ratio",
+        type=float,
+        default=None,
+        help="fail when fewer than this share of plans could be followed as written",
     )
     return parser.parse_args(argv)
 
@@ -79,6 +86,15 @@ async def _main(args: argparse.Namespace) -> int:
     print(f"mean score : {summary.mean_score if summary.mean_score is not None else 'n/a'}")
     print(f"degraded   : {summary.degraded}/{summary.cases}")
     print(f"errors     : {summary.errors}")
+    if summary.usability is not None:
+        print(
+            f"usable     : {summary.usability.usable}/{summary.usability.cases} "
+            f"({summary.usable_ratio:.0%} 可直接照着走)"
+        )
+        for rule in RULES:
+            count = summary.usability.failures_by_rule.get(rule.key, 0)
+            if count:
+                print(f"  - {rule.label}：{count} 处")
     print(f"report     : {output}")
 
     problems = violations(
@@ -86,13 +102,20 @@ async def _main(args: argparse.Namespace) -> int:
         min_score=args.min_score,
         max_errors=args.max_errors,
         max_degraded_ratio=args.max_degraded_ratio,
+        min_usable_ratio=args.min_usable_ratio,
     )
     if problems:
         print()
         for problem in problems:
             print(f"FAIL: {problem}")
         return 1
-    if args.min_score is not None or args.max_errors is not None or args.max_degraded_ratio is not None:
+    gated = (
+        args.min_score,
+        args.max_errors,
+        args.max_degraded_ratio,
+        args.min_usable_ratio,
+    )
+    if any(value is not None for value in gated):
         print("thresholds : passed")
     return 0
 

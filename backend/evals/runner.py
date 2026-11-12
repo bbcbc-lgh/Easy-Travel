@@ -8,6 +8,7 @@ from typing import Literal
 
 from evals.judge import judge_plan
 from evals.metrics import CaseMetrics, measure
+from evals.usability import CaseUsability, assess
 from src.api.deps import TripPlanningPipeline
 from src.config import Settings
 from src.model.schemas import TripPlanRequest
@@ -44,6 +45,9 @@ class EvalCase:
 class EvalResult:
     case: EvalCase
     metrics: CaseMetrics
+    #: Whether a traveller could follow the plan as written; None when the case
+    #: never produced one.
+    usability: CaseUsability | None = None
     judge: dict | None = None
     error: str | None = None
 
@@ -78,10 +82,11 @@ async def run_case(
         )
 
     metrics = measure(case.id, plan, request, offline=offline)
+    usability = assess(plan, request, case.id)
     verdict = None
     if use_judge and not plan.degraded:
         verdict = await judge_plan(pipeline.graph.planner_agent.llm_planner.gateway, plan)
-    return EvalResult(case=case, metrics=metrics, judge=verdict)
+    return EvalResult(case=case, metrics=metrics, usability=usability, judge=verdict)
 
 
 async def run_all(

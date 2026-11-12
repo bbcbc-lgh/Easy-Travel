@@ -19,6 +19,7 @@ from evals.metrics import (
     reference_budget,
 )
 from evals.runner import EvalResult, build_pipeline, load_cases, run_case
+from evals.usability import CaseUsability, Failure
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, Meal, TripPlan, TripPlanRequest
 
 
@@ -303,3 +304,58 @@ def test_error_and_degraded_thresholds() -> None:
     assert summary.degraded_ratio == pytest.approx(0.5)
     assert violations(summary, max_degraded_ratio=0.5) == []
     assert len(violations(summary, max_degraded_ratio=0.4)) == 1
+
+
+# --- gates: usability ---------------------------------------------------------
+
+
+def _with_usability(*specs: tuple[bool, str]) -> list[EvalResult]:
+    """Build results from (usable, case_id) pairs."""
+    case = load_cases(limit=1)[0]
+    results = []
+    for usable, case_id in specs:
+        verdict = CaseUsability(
+            case_id=case_id,
+            failures=[] if usable else [Failure("meals_complete", "第 1 天缺少早餐")],
+        )
+        results.append(EvalResult(case=case, metrics=CaseMetrics(case_id=case_id, score=80.0), usability=verdict))
+    return results
+
+
+def test_a_fully_usable_run_meets_a_hundred_percent_floor() -> None:
+    summary = summarise(_with_usability((True, "a"), (True, "b")))
+
+    assert summary.usable_ratio == 1.0
+    assert violations(summary, min_usable_ratio=1.0) == []
+
+
+def test_an_unusable_plan_breaks_the_floor_and_names_itself() -> None:
+    summary = summarise(_with_usability((True, "a"), (False, "b")))
+
+    assert summary.usable_ratio == 0.5
+    problems = violations(summary, min_usable_ratio=1.0)
+
+    assert len(problems) == 1
+    assert "50%" in problems[0]
+    assert "b" in problems[0]
+
+
+def test_a_case_that_never_produced_a_plan_counts_as_unusable() -> None:
+    case = load_cases(limit=1)[0]
+    results = [
+        *_with_usability((True, "a"), (True, "b")),
+        EvalResult(case=case, metrics=CaseMetrics(case_id="c"), usability=None, error="boom"),
+    ]
+
+    summary = summarise(results)
+
+    assert summary.cases == 3
+    assert summary.usable_ratio == pytest.approx(2 / 3)
+
+
+def test_a_run_without_any_verdict_cannot_meet_a_usability_floor() -> None:
+    summary = summarise(_results((80.0, False, False)))
+
+    problems = violations(summary, min_usable_ratio=0.9)
+
+    assert problems and "no case produced a usable-plan verdict" in problems[0]
