@@ -89,14 +89,16 @@ def request(day_date: str) -> TripPlanRequest:
     )
 
 
-def test_critic_notes_a_venue_closed_on_that_weekday() -> None:
+def test_critic_flags_a_venue_closed_on_that_weekday() -> None:
+    """An issue, not a note: moving the stop to another day is the model's call."""
     monday = "2026-11-23"  # a Monday
     plan = build_plan(monday, "周二至周日 09:00-16:30")
 
     critique = PlanCritic().review(request(monday), plan)
 
-    assert critique.notes
-    assert any("可能不开放" in note for note in critique.notes)
+    assert critique.issues
+    assert any("不开放" in issue for issue in critique.issues)
+    assert critique.needs_revision is True
 
 
 def test_critic_does_not_note_open_venues() -> None:
@@ -105,7 +107,7 @@ def test_critic_does_not_note_open_venues() -> None:
 
     critique = PlanCritic().review(request(monday), plan)
 
-    assert not any("可能不开放" in note for note in critique.notes)
+    assert not any("不开放" in issue for issue in critique.issues)
 
 
 def test_evals_count_opening_hours() -> None:

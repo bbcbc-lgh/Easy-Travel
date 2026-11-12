@@ -78,11 +78,17 @@ class PlanCritic:
                         f"高于{request.budget}预算的参考上限 {cap} 元。"
                     )
 
-            critique.notes.extend(self._closure_notes(day))
+            critique.issues.extend(self._closure_issues(day))
 
             if day_load(day) > DAILY_LOAD_LIMIT:
-                critique.notes.append(
-                    f"第 {label} 天安排了 {describe_load(day)}，按景点类型估算一天走不完，建议减掉一个或拆到次日。"
+                # An issue, not a note: the model chose these stops, so it can
+                # choose fewer. Filed as a note it only warned the user; a live
+                # eval run showed every model-built plan over-packing its days
+                # (load 4.0-6.0 against a 3.5 limit) while the rule planner, which
+                # enforces the limit, never does.
+                critique.issues.append(
+                    f"第 {label} 天安排了 {describe_load(day)}，按景点类型估算一天走不完，"
+                    "请减掉一个景点或换成更轻的安排。"
                 )
 
         if critique.issues or critique.notes:
@@ -98,18 +104,42 @@ class PlanCritic:
         return critique
 
     @staticmethod
-    def _closure_notes(day: DayPlan) -> list[str]:
-        """Flag venues whose stated hours exclude this day's weekday."""
+    def _closure_issues(day: DayPlan) -> list[str]:
+        """Venues whose stated hours exclude this day's weekday.
+
+        An issue rather than a note: moving the venue to another day, or choosing
+        another one, is a decision the model can act on. `is_closed_on` returns
+        True only when the opening-hours text says so, so uncertain data stays
+        silent instead of triggering a retry.
+        """
         try:
             weekday = date.fromisoformat(day.date).weekday()
         except ValueError:
             return []
 
-        notes: list[str] = []
+        issues: list[str] = []
         for item in [*day.attractions, *day.meals]:
-            if is_closed_on(item.opening_hours, weekday):
-                notes.append(
+            if is_closed_on(item.opening_hours, weekday) is True:
+                issues.append(
                     f"第 {day.day_index + 1} 天（{weekday_name(weekday)}）「{item.name}」"
-                    "的营业时间显示当天可能不开放，请出发前确认。"
+                    "营业时间显示当天不开放，请换到别的天或换成其他地点。"
                 )
-        return notes
+        return issues
+
+
+def attach_critique(plan: TripPlan, critique: Critique, *, will_retry: bool) -> TripPlan:
+    """Record the critic's findings on the plan so the user sees them.
+
+    Notes are data limitations (a cheaper restaurant does not exist); they never
+    justify another paid model round. Issues do justify one, and when no retry will
+    happen — revisions exhausted, or a plan the user edited by hand — they are
+    surfaced as warnings too. Dropping them silently would make a plan that cannot
+    actually be walked look clean.
+    """
+    if plan.quality is None:
+        return plan
+
+    plan.quality.warnings.extend(critique.notes)
+    if not will_retry:
+        plan.quality.warnings.extend(f"未能自动修正：{issue}" for issue in critique.issues)
+    return plan

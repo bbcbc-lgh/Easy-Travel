@@ -20,7 +20,7 @@ from src.service.logging import log_event
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "planner-v4"
+PROMPT_VERSION = "planner-v5"
 
 
 class DecisionError(Exception):
@@ -59,7 +59,9 @@ class LLMPlanner:
             '"attractions":["景点名称"],"meals":["餐饮名称"],"hotel":"酒店名称"}],'
             '"overall_suggestions":"整体建议"}\n'
             f"规则：days 必须恰好覆盖 0 到 {request.days - 1}；每天 1-3 个景点，所有景点不得重复；"
-            "同一天的景点必须彼此靠近（尽量在 5 公里内），避免跨区折返；"
+            "同一天景点必须彼此靠近（尽量在 5 公里内），避免跨区折返；"
+            "同一天不要安排两个大型场馆（博物馆/纪念馆/美术馆/展览馆）——两个大馆走不完；"
+            "如果当天已经有一个大馆，第二个景点请选公园、街区或市集这类轻松的场所；"
             "每天安排 3 个餐饮，早餐要选酒店附近的早点类店铺；"
             "description 只写活动、区域和节奏，不要写具体餐厅或酒店名称（餐食与住宿由其他字段决定）；"
             "hotel 只能取候选酒店；不要输出坐标、价格、天气或 Markdown 代码块。"

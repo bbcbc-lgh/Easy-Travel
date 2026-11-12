@@ -19,6 +19,7 @@ from src.model.schemas import (
     TripPlanRequest,
     TripPlanSummary,
 )
+from src.planning.critic import attach_critique
 from src.planning.reviser import PatchError
 from src.service.database import TripPlanRepository
 from src.service.generation_guard import GenerationGuard, QuotaExceededError, ServerBusyError
@@ -326,14 +327,13 @@ def _days_needing_meal_anchor(patch: PlanPatch) -> set[int]:
 
 
 def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest, plan: TripPlan) -> TripPlan:
-    """Re-score an edited plan and re-attach the critic's notes.
+    """Re-score an edited plan and re-attach what the critic found.
 
-    Generation attaches density/closure/budget notes in the graph; edits and
-    revisions go through this path instead, so the same warnings survive a
-    manual change.
+    Generation attaches density/closure/budget findings in the graph; edits and
+    revisions go through this path instead, so the same warnings survive a manual
+    change. ``will_retry=False``: a hand-edited plan is never sent back to the
+    model, so anything it still gets wrong is reported rather than fixed.
     """
     plan = pipeline.review_agent.run(request, plan)
     critique = pipeline.critic.review(request, plan)
-    if plan.quality is not None and critique.notes:
-        plan.quality.warnings.extend(critique.notes)
-    return plan
+    return attach_critique(plan, critique, will_retry=False)

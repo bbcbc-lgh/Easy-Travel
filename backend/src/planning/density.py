@@ -5,7 +5,7 @@ Walking minutes are a poor proxy: a national museum and a city park can both be
 This module gives each stop a *load* instead, and a day has a budget.
 """
 
-from src.model.schemas import Attraction, DayPlan
+from src.model.schemas import Attraction, DayPlan, TripPlan
 
 DAILY_LOAD_LIMIT = 3.5
 
@@ -43,3 +43,20 @@ def overloaded_days(plan) -> list[tuple[int, float]]:
 def describe_load(day: DayPlan) -> str:
     names = "、".join(item.name for item in day.attractions)
     return f"{names}（约 {day_load(day):.1f} 个单位，单日建议上限 {DAILY_LOAD_LIMIT}）"
+
+
+def trim_days_to_load(plan: TripPlan) -> list[str]:
+    """Drop the tail of an over-loaded day until it fits, and say what was dropped.
+
+    The model decides *which* places; how many of them fit in a day is arithmetic,
+    and this project does not trust the model with arithmetic. A live eval run
+    showed model plans at 4.0-6.0 load against a 3.5 limit: asking for a replan
+    fixed some of them and cost a model call, so the remaining excess is trimmed
+    here instead. Never empties a day: one stop is always better than none.
+    """
+    removed: list[str] = []
+    for day in plan.days:
+        while len(day.attractions) > 1 and day_load(day) > DAILY_LOAD_LIMIT:
+            dropped = day.attractions.pop()
+            removed.append(f"第 {day.day_index + 1} 天已移除「{dropped.name}」（单日强度超出上限）")
+    return removed

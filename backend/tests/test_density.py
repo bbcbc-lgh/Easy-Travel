@@ -1,7 +1,7 @@
 from datetime import date
 
-from src.model.schemas import Attraction, DayPlan, Location, Meal, TripPlan, TripPlanRequest
-from src.planning.critic import PlanCritic
+from src.model.schemas import Attraction, DayPlan, Location, Meal, PlanQuality, TripPlan, TripPlanRequest
+from src.planning.critic import PlanCritic, attach_critique
 from src.planning.density import (
     DAILY_LOAD_LIMIT,
     HEAVY_LOAD,
@@ -9,6 +9,7 @@ from src.planning.density import (
     MEDIUM_LOAD,
     attraction_load,
     day_load,
+    trim_days_to_load,
 )
 from src.planning.scheduler import enforce_load
 
@@ -103,10 +104,60 @@ def request() -> TripPlanRequest:
     )
 
 
-def test_critic_notes_an_overloaded_day_without_forcing_a_replan() -> None:
+def test_critic_treats_an_overloaded_day_as_a_reason_to_replan() -> None:
+    """Overload is the model's own choice of stops, so it is fixable by the model.
+
+    This used to be a note, which meant the pipeline only warned the user. A live
+    eval run showed every model-built plan over-packing its days while the rule
+    planner, which enforces the limit, never did - so it now asks for one replan.
+    """
     plan = build_plan(day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆")))
 
     critique = PlanCritic().review(request(), plan)
 
-    assert any("走不完" in note for note in critique.notes)
-    assert critique.needs_revision is False, "overload is a note, not a reason to re-plan"
+    assert any("走不完" in issue for issue in critique.issues)
+    assert critique.needs_revision is True
+
+
+def test_an_unfixable_overload_still_reaches_the_user() -> None:
+    """With no retry left, the issue must show up as a warning instead of vanishing."""
+    plan = build_plan(day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆")))
+    plan.quality = PlanQuality(score=90, warnings=[], checks={})
+
+    critique = PlanCritic().review(request(), plan)
+    attach_critique(plan, critique, will_retry=False)
+
+    assert any("未能自动修正" in warning for warning in plan.quality.warnings)
+    assert any("走不完" in warning for warning in plan.quality.warnings)
+
+
+def test_trim_drops_stops_until_the_day_fits() -> None:
+    plan = build_plan(day(attraction("国博", "博物馆"), attraction("故宫", "宫殿"), attraction("养心殿", "博物馆")))
+    assert day_load(plan.days[0]) > DAILY_LOAD_LIMIT
+
+    removed = trim_days_to_load(plan)
+
+    assert day_load(plan.days[0]) <= DAILY_LOAD_LIMIT
+    assert removed
+    assert all("已移除" in message for message in removed)
+    assert any("养心殿" in message for message in removed)
+
+
+def test_trim_leaves_a_fitting_day_alone() -> None:
+    plan = build_plan(day(attraction("公园", "公园"), attraction("街区", "步行街")))
+    before = [item.name for item in plan.days[0].attractions]
+
+    removed = trim_days_to_load(plan)
+
+    assert removed == []
+    assert [item.name for item in plan.days[0].attractions] == before
+
+
+def test_trim_never_empties_a_day() -> None:
+    """One stop is always better than an empty day, even if it is a heavy one."""
+    plan = build_plan(day(attraction("国博", "博物馆")))
+
+    removed = trim_days_to_load(plan)
+
+    assert removed == []
+    assert len(plan.days[0].attractions) == 1

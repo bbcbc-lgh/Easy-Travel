@@ -14,7 +14,8 @@ from src.agent.review_agent import ReviewAgent
 from src.agent.weather_agent import WeatherQueryAgent
 from src.model.schemas import Attraction, Hotel, Meal, TripPlan, TripPlanRequest, WeatherInfo
 from src.planning.budget import calculate_budget
-from src.planning.critic import PlanCritic
+from src.planning.critic import PlanCritic, attach_critique
+from src.planning.density import trim_days_to_load
 from src.planning.scheduler import pick_meals
 from src.service.amap import AMapService
 from src.service.logging import log_event
@@ -252,18 +253,22 @@ class TripPlanningGraph:
         request = _require_request(state)
         started = perf_counter()
         await self._emit(state, "review_plan", "start")
+        # Trim before scoring: which places the model picked is its call, whether
+        # they fit in one day is arithmetic, and the plan must be walkable.
+        trimmed = trim_days_to_load(_require_plan(state))
         plan = self.review_agent.run(
             request,
             _require_plan(state),
             candidate_count=state.get("candidate_count", 0),
         )
+        if trimmed and plan.quality is not None:
+            plan.quality.warnings.extend(trimmed)
         critique = self.critic.review(request, plan)
-        if plan.quality is not None and critique.notes:
-            # Data limitations (e.g. no cheaper restaurant available) are shown
-            # to the user, but never trigger another paid model round.
-            plan.quality.warnings.extend(critique.notes)
         revision = state.get("revision", 0)
         should_revise = critique.needs_revision and revision < self.max_revisions
+        # Data limitations are only ever warnings; issues go back to the model once,
+        # and are shown to the user if there is no retry left.
+        attach_critique(plan, critique, will_retry=should_revise)
 
         update: TripPlanningState = {"plan": plan, "critique": critique.issues}
         if should_revise:
