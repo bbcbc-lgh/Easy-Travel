@@ -165,4 +165,58 @@ describe('streamTripPlan', () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(init.signal).toBe(controller.signal)
   })
+
+  it('forwards description deltas while the plan is still being written', async () => {
+    const { streamTripPlan } = await loadApi()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          sseResponse([
+            'event: day_description_delta\ndata: {"text":"上午沿湖"}\n\n',
+            'event: day_description_delta\ndata: {"text":"散步。"}\n\n',
+            'event: plan\ndata: {"plan":{"id":"p1","city":"杭州"}}\n\n'
+          ])
+        )
+    )
+
+    const chunks: string[] = []
+    await streamTripPlan(payload(), {
+      onDescriptionDelta: (text) => chunks.push(text),
+      onPlan: () => undefined,
+      onError: (detail) => {
+        throw new Error(`unexpected error: ${detail}`)
+      }
+    })
+
+    expect(chunks).toEqual(['上午沿湖', '散步。'])
+  })
+
+  it('ignores a malformed delta frame instead of breaking the stream', async () => {
+    const { streamTripPlan } = await loadApi()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          sseResponse([
+            'event: day_description_delta\ndata: {"text":"ok"}\n\n',
+            'event: day_description_delta\ndata: {"nope":1}\n\n',
+            'event: plan\ndata: {"plan":{"id":"p1","city":"杭州"}}\n\n'
+          ])
+        )
+    )
+
+    const chunks: string[] = []
+    await streamTripPlan(payload(), {
+      onDescriptionDelta: (text) => chunks.push(text),
+      onPlan: () => undefined,
+      onError: (detail) => {
+        throw new Error(`unexpected error: ${detail}`)
+      }
+    })
+
+    expect(chunks).toEqual(['ok'])
+  })
 })

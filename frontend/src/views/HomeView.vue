@@ -17,7 +17,7 @@
           type="info"
           show-icon
           message="当前未配置模型，生成会使用规则规划"
-          description="在 backend/.env 里填写 LLM_API_KEY 与 LLM_BASE_URL 后重启后端，即可使用 AI 规划。"
+          description="在仓库根目录的 .env 里填写 LLM_API_KEY 与 LLM_BASE_URL 后重启后端，即可使用 AI 规划。"
         />
         <a-form layout="vertical" :model="formData" @finish="handleSubmit">
           <div class="form-section">
@@ -59,6 +59,20 @@
                   placeholder="如：3"
                   class="full-width"
                 />
+              </a-form-item>
+              <a-form-item
+                label="当天到达时间（可选）"
+                name="arrivalTime"
+                extra="例如 15:00。填了之后首日只安排半天，不会一落地就排三个景点。"
+              >
+                <a-input v-model:value="arrivalTime" type="time" placeholder="如：15:00" />
+              </a-form-item>
+              <a-form-item
+                label="最后一天离开时间（可选）"
+                name="departureTime"
+                extra="例如 12:00。填了之后末日会收紧，留出去车站/机场的时间。"
+              >
+                <a-input v-model:value="departureTime" type="time" placeholder="如：12:00" />
               </a-form-item>
             </div>
           </div>
@@ -118,6 +132,18 @@
                 </a-checkbox>
               </a-checkbox-group>
             </a-form-item>
+            <a-form-item label="必去地点（可选）" name="mustVisit">
+              <a-select
+                v-model:value="mustVisit"
+                mode="tags"
+                :max-tag-count="6"
+                placeholder="如：西湖、故宫博物院。输入后回车添加"
+                :token-separators="[',', '，', '、']"
+              />
+              <p class="field-hint">
+                这些地点会被强制安排进行程，且只出现一次；服务端找不到时会直接报错，而不是悄悄忽略。
+              </p>
+            </a-form-item>
             <a-form-item label="特别需求（可选）" name="extraRequirements">
               <a-textarea
                 v-model:value="extraRequirements"
@@ -146,7 +172,11 @@
               </li>
             </ul>
             <p class="loading-hint">
-              模型正在规划行程，通常需要 30–70 秒。等待期间可以取消，不必关闭页面。
+              生成分两步：先定路线，再写当日说明。实测整单中位数约 17 秒，多数在 30 秒内完成。
+              等待期间可以取消，不必关闭页面。
+            </p>
+            <p v-if="liveDescription" class="loading-hint loading-live">
+              {{ liveDescription }}
             </p>
             <p v-if="stalled" class="loading-hint loading-stalled">
               已有 15 秒没收到服务端进度，可能仍卡在模型响应上；可以再等一会儿，或取消后重试。
@@ -198,6 +228,9 @@ const stageStatus = ref<Record<string, 'pending' | 'active' | 'done'>>({})
 const stageDurations = ref<Record<string, number>>({})
 const stalled = ref(false)
 const cancelling = ref(false)
+// Prose streamed from the description phase: the only part of the wait that is
+// readable while it happens, because everything before it is server-side.
+const liveDescription = ref('')
 
 const currentStageLabel = computed(() => {
   const active = stageOrder.find((stage) => stageStatus.value[stage.key] === 'active')
@@ -227,6 +260,9 @@ const defaultForm = (): TripPlanForm => ({
 const formData = reactive<TripPlanForm>(defaultForm())
 const selectedPreferences = ref<string[]>([])
 const extraRequirements = ref('')
+const mustVisit = ref<string[]>([])
+const arrivalTime = ref('')
+const departureTime = ref('')
 const preferenceOptions = ['历史文化', '自然风光', '美食', '购物', '艺术', '休闲', '亲子', '摄影']
 const budgetOptions = ['经济', '中等', '舒适', '豪华']
 const transportOptions = ['公共交通', '打车', '自驾'].map((value) => ({ label: value, value }))
@@ -239,6 +275,9 @@ function resetForm() {
   Object.assign(formData, defaultForm())
   selectedPreferences.value = []
   extraRequirements.value = ''
+  mustVisit.value = []
+  arrivalTime.value = ''
+  departureTime.value = ''
 }
 
 function buildPreferences() {
@@ -292,6 +331,7 @@ async function handleSubmit() {
   loading.value = true
   cancelling.value = false
   stalled.value = false
+  liveDescription.value = ''
   stageStatus.value = {}
   stageDurations.value = {}
   elapsedSeconds.value = 0
@@ -318,7 +358,10 @@ async function handleSubmit() {
         preferences: buildPreferences(),
         budget,
         transportation,
-        accommodation
+        accommodation,
+        must_visit: mustVisit.value,
+        arrival_time: arrivalTime.value || null,
+        departure_time: departureTime.value || null
       },
       {
         onStage: markStage,
@@ -327,6 +370,11 @@ async function handleSubmit() {
         onHeartbeat: () => {
           lastProgressAt = Date.now()
           stalled.value = false
+        },
+        onDescriptionDelta: (text: string) => {
+          lastProgressAt = Date.now()
+          stalled.value = false
+          liveDescription.value += text
         },
         onPlan: (plan: TripPlan) => {
           finished = true

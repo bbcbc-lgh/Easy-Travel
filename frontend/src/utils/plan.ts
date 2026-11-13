@@ -77,3 +77,24 @@ export function removeAt<T>(items: T[], index: number): boolean {
   items.splice(index, 1)
   return true
 }
+
+/**
+ * Turn an AMap loader failure into the one sentence that tells you what to fix.
+ *
+ * "检查高德 JS Key" was the whole message before, which sent a real user looking at
+ * a key that was fine: the actual cause was a missing security code, which AMap
+ * requires for a JS API key and never mentions without decoding the error.
+ */
+export function describeMapFailure(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  if (/INVALID_USER_SCODE|USER_SCODE|securityJsCode/i.test(detail)) {
+    return '地图加载失败：缺少「安全密钥」。到高德控制台这个 JS API Key 的安全密钥里复制，填进根目录 .env 的 VITE_AMAP_SECURITY_CODE'
+  }
+  if (/INVALID_USER_KEY|USERKEY_PLAT_NOMATCH|INVALID_USER_DOMAIN/i.test(detail)) {
+    return '地图加载失败：Key 类型不对。需要「Web端(JS API)」的 Key，不能用「Web服务」的 Key'
+  }
+  if (/REFERER|DOMAIN_WHITE/i.test(detail)) {
+    return '地图加载失败：这个域名不在该 Key 的白名单里'
+  }
+  return `地图加载失败：${detail.slice(0, 120)}`
+}

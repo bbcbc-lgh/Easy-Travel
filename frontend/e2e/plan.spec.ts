@@ -84,3 +84,76 @@ test('exports the plan as a PDF download', async ({ page }) => {
 
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.pdf$/)
 })
+
+// --- behaviours the unit tests cannot see: they live in the seam between server
+// --- and page, which is exactly where the last round put three regressions.
+
+test('the timetable survives an edit', async ({ page }) => {
+  await requestPlan(page)
+  const url = await waitForPlan(page)
+
+  const timelineSlots = page.locator('.timeline-slot')
+  expect(await timelineSlots.count()).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: '编辑行程' }).click()
+  await page
+    .locator('article.day-card')
+    .first()
+    .locator('.attraction-item')
+    .first()
+    .locator('.edit-buttons button')
+    .last()
+    .click()
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByText('修改已保存')).toBeVisible()
+
+  // Reload from the server: the timetable has to be rebuilt for the edited plan,
+  // not just carried along in the local copy.
+  await page.evaluate(() => sessionStorage.clear())
+  await page.goto(url)
+
+  expect(await timelineSlots.count()).toBeGreaterThan(0)
+  await expect(timelineSlots.first()).toContainText(/\d{2}:\d{2}–\d{2}:\d{2}/)
+})
+
+test('a must-visit that cannot be checked says so instead of pretending', async ({ page }) => {
+  await requestPlan(page)
+
+  // The suite runs with USE_SAMPLE_DATA, so the server has no way to resolve the
+  // place. It must say that plainly rather than silently dropping the request.
+  await page.goto('/')
+  await page.getByPlaceholder('如：北京').fill('杭州')
+  await page.locator('input[type="date"]').fill('2026-12-01')
+  await page.getByPlaceholder('如：3').fill('2')
+  await page.locator('.ant-segmented-item', { hasText: '中等' }).click()
+  await pickFromSelect(page, 'transportation', '公共交通')
+  await pickFromSelect(page, 'accommodation', '经济型酒店')
+
+  const mustVisit = page.locator('.ant-select:has(#form_item_mustVisit) input')
+  await mustVisit.fill('西湖')
+  await mustVisit.press('Enter')
+
+  await page.getByRole('button', { name: '生成行程' }).click()
+  await waitForPlan(page)
+
+  await expect(page.getByText(/必去地点.*未参与校验/)).toBeVisible()
+})
+
+test('an arrival time moves the first day\u2019s clock', async ({ page }) => {
+  await page.goto('/')
+  await page.getByPlaceholder('如：北京').fill('杭州')
+  await page.locator('input[type="date"]').fill('2026-12-01')
+  await page.getByPlaceholder('如：3').fill('2')
+  await page.locator('.ant-segmented-item', { hasText: '中等' }).click()
+  await pickFromSelect(page, 'transportation', '公共交通')
+  await pickFromSelect(page, 'accommodation', '经济型酒店')
+
+  // Ant Design puts the form item id on the input itself, not on a wrapper.
+  await page.locator('#form_item_arrivalTime').fill('15:00')
+  await page.getByRole('button', { name: '生成行程' }).click()
+  await waitForPlan(page)
+
+  // Not "the timeline exists": the *first slot starts at the arrival time*.
+  const firstSlot = page.locator('article.day-card').first().locator('.timeline-slot').first()
+  await expect(firstSlot).toContainText(/15:00[–-]/)
+})

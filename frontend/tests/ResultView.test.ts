@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
 import Antd from 'ant-design-vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -112,6 +112,8 @@ async function mountResult() {
 describe('ResultView', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    // Reported stops survive a reload on purpose; between tests that is leakage.
+    localStorage.clear()
     getTripPlan.mockReset()
     updateTripPlan.mockReset()
     sendPlanFeedback.mockReset()
@@ -176,6 +178,10 @@ describe('ResultView', () => {
 })
 
 describe('feedback on a stop', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   it('records the reason and then goes quiet', async () => {
     sendPlanFeedback.mockResolvedValue(undefined)
     const wrapper = await mountResult()

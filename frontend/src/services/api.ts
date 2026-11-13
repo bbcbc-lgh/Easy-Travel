@@ -126,6 +126,11 @@ export interface PlanStageEvent {
 export interface PlanStreamHandlers {
   onStage?: (event: PlanStageEvent) => void
   onHeartbeat?: (elapsedMs: number) => void
+  /**
+   * Prose arriving as it is written. The final `plan` event is still the only
+   * source of truth: this exists so the last few seconds are not a blank panel.
+   */
+  onDescriptionDelta?: (text: string) => void
   onPlan: (plan: TripPlan) => void
   onError: (message: string) => void
   /** The caller aborted (button, unmount); not an error the user needs to see. */
@@ -196,6 +201,11 @@ export async function streamTripPlan(
     }
     if (event.name === 'heartbeat') {
       handlers.onHeartbeat?.((data as { elapsed_ms?: number }).elapsed_ms ?? 0)
+      return
+    }
+    if (event.name === 'day_description_delta') {
+      const text = (data as { text?: string }).text
+      if (typeof text === 'string') handlers.onDescriptionDelta?.(text)
       return
     }
     if (event.name === 'plan') {

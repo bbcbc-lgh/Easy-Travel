@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', Arial, sans-serif;
   color: #1b2e2b;
   background: #f4f6f2;
@@ -806,6 +806,47 @@ select:focus-visible,
 
 .attraction-list {
   padding: 0 24px;
+}
+
+/* The day's clock. Times are the difference between an itinerary and a list. */
+.timeline-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px 24px 0;
+}
+
+.timeline-slot {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 10px;
+  background: #f2f7f3;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.timeline-clock {
+  font-variant-numeric: tabular-nums;
+  color: #3f6b50;
+  font-weight: 600;
+}
+
+.timeline-name {
+  color: #2c3b32;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  color: #6b7a70;
+  font-size: 13px;
+}
+
+/* Prose arriving while the plan is still being written. */
+.loading-live {
+  color: #3f6b50;
+  font-style: normal;
+  line-height: 1.7;
 }
 
 .attraction-item {

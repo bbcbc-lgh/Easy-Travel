@@ -202,6 +202,21 @@
                 <a-tag v-if="day.hotel.source === 'sample'" color="warning">演示数据</a-tag>
               </div>
 
+              <div
+                v-if="day.timeline && day.timeline.length"
+                class="timeline-strip"
+                aria-label="当天时间轴"
+              >
+                <div
+                  v-for="slot in day.timeline"
+                  :key="`${slot.start}-${slot.name}`"
+                  class="timeline-slot"
+                >
+                  <span class="timeline-clock">{{ slot.start }}–{{ slot.end }}</span>
+                  <span class="timeline-name">{{ slot.name }}</span>
+                </div>
+              </div>
+
               <div class="attraction-list">
                 <div
                   v-for="(attraction, attractionIndex) in day.attractions"
@@ -353,7 +368,7 @@
 </template>
 
 <script setup lang="ts">
-import AMapLoader from '@amap/amap-jsapi-loader'
+import { message, Modal } from 'ant-design-vue'
 import {
   ArrowDown,
   ArrowLeft,
@@ -373,66 +388,55 @@ import {
   Undo2,
   WalletCards
 } from 'lucide-vue-next'
-import { Modal, message } from 'ant-design-vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import {
-  deleteTripPlan,
-  getTripPlan,
-  reviseTripPlan,
-  sendPlanFeedback,
-  updateTripPlan
-} from '../services/api'
+import { usePlanEdit } from '../composables/usePlanEdit'
+import { usePlanExport } from '../composables/usePlanExport'
+import { FEEDBACK_REASONS, usePlanFeedback } from '../composables/usePlanFeedback'
+import { usePlanMap } from '../composables/usePlanMap'
+import { deleteTripPlan, getTripPlan, reviseTripPlan } from '../services/api'
 import type { FeedbackReason } from '../services/api'
 import type { TripPlan } from '../types/trip'
-import { paginateCanvas } from '../utils/pdf'
 import {
   degradedReasonLabel,
   formatDistance,
-  moveItem,
   nightsFor,
   priceText,
-  removeAt,
   ticketText,
   weatherSourceLabel
 } from '../utils/plan'
 
 const router = useRouter()
 const route = useRoute()
-const selectedKeys = ref(['overview'])
-const editMode = ref(false)
-const saving = ref(false)
-const exporting = ref<'' | 'image' | 'pdf' | 'print'>('')
-const pendingStop = ref<{ dayIndex: number; name: string } | null>(null)
-const reportedStops = ref<Set<string>>(new Set())
-const reporting = ref(false)
 
-const FEEDBACK_REASONS: { value: FeedbackReason; label: string }[] = [
-  { value: 'too_packed', label: '排得太满' },
-  { value: 'wrong_place', label: '地点不合适' },
-  { value: 'closed', label: '当时不开放' },
-  { value: 'too_far', label: '距离太远' },
-  { value: 'other', label: '其他' }
-]
-const originalPlan = ref<TripPlan | null>(null)
-const mapReady = ref(false)
-const mapStatus = ref('正在准备地图')
+const selectedKeys = ref(['overview'])
+const expandedDayIndices = ref<number[]>([0])
+const pendingStop = ref<{ dayIndex: number; name: string } | null>(null)
+const reviseInstruction = ref('')
+const revising = ref(false)
+const reviseReply = ref('')
+const reviseError = ref('')
 
 const routePlanId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const tripPlan = ref<TripPlan | null>(loadInitialPlan())
 const allAttractions = computed(() => tripPlan.value?.days.flatMap((day) => day.attractions) || [])
 const hotelNights = computed(() => nightsFor(tripPlan.value?.days.length || 1))
-const expandedDayIndices = ref<number[]>([0])
 const qualityWarnings = computed(() => tripPlan.value?.quality?.warnings || [])
-const reviseInstruction = ref('')
-const revising = ref(false)
-const reviseReply = ref('')
-const reviseError = ref('')
-let mapInstance: { destroy: () => void } | null = null
-// Bumped on every init: an older in-flight init must not steal the container
-// from a newer one (both used to pass the "already destroyed?" check).
-let mapInitSeq = 0
+
+// Each of these owns one concern and cleans up after itself; the view is the glue.
+const { mapReady, mapStatus, initMap } = usePlanMap(allAttractions)
+const { exportAsImage, exportAsPDF, printPlan } = usePlanExport(tripPlan, expandedDayIndices)
+const {
+  editMode,
+  saving,
+  toggleEditMode,
+  saveChanges,
+  cancelEdit,
+  moveAttraction,
+  deleteAttraction
+} = usePlanEdit(tripPlan, { persist: persistPlan, onSaved: () => void initMap() })
+const { isReported, reportStop } = usePlanFeedback(() => tripPlan.value?.id ?? '')
 
 function loadInitialPlan(): TripPlan | null {
   const cached = sessionStorage.getItem('tripPlan')
@@ -443,6 +447,12 @@ function loadInitialPlan(): TripPlan | null {
     // A stale or truncated cache must not blank the page; drop it and refetch.
     sessionStorage.removeItem('tripPlan')
     return null
+  }
+}
+
+function persistPlan() {
+  if (tripPlan.value) {
+    sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
   }
 }
 
@@ -461,67 +471,6 @@ function toggleDay(dayIndex: number) {
     : [...expandedDayIndices.value, dayIndex]
 }
 
-function toggleEditMode() {
-  editMode.value = !editMode.value
-  if (editMode.value && tripPlan.value) {
-    originalPlan.value = JSON.parse(JSON.stringify(tripPlan.value)) as TripPlan
-  }
-}
-
-async function saveChanges() {
-  if (!tripPlan.value || saving.value) return
-  saving.value = true
-  try {
-    if (tripPlan.value.id) {
-      tripPlan.value = await updateTripPlan(tripPlan.value.id, tripPlan.value)
-    }
-    // Leave edit mode only after the server accepted the change. Clearing it
-    // first (the old order) meant a failed save discarded the user's snapshot,
-    // hid the save button and left no way to retry or cancel.
-    editMode.value = false
-    originalPlan.value = null
-    persistPlan()
-    void initMap()
-    message.success('修改已保存')
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : '请稍后再试'
-    message.error(`保存失败：${detail}`)
-  } finally {
-    saving.value = false
-  }
-}
-
-function cancelEdit() {
-  if (saving.value) return
-  if (originalPlan.value) {
-    tripPlan.value = originalPlan.value
-  }
-  editMode.value = false
-  originalPlan.value = null
-  void initMap()
-}
-
-function moveAttraction(dayIndex: number, attractionIndex: number, direction: 'up' | 'down') {
-  const attractions = tripPlan.value?.days[dayIndex]?.attractions
-  if (!attractions) return
-  moveItem(attractions, attractionIndex, direction)
-}
-
-function deleteAttraction(dayIndex: number, attractionIndex: number) {
-  const attractions = tripPlan.value?.days[dayIndex]?.attractions
-  if (!attractions) return
-  removeAt(attractions, attractionIndex)
-}
-
-function stopKey(dayIndex: number, name: string): string {
-  return `${dayIndex}|${name}`
-}
-
-/** Whether this stop's complaint is already recorded, so the button can go quiet. */
-function isReported(dayIndex: number, name: string): boolean {
-  return reportedStops.value.has(stopKey(dayIndex, name))
-}
-
 /**
  * Record "this stop is wrong".
  *
@@ -532,29 +481,8 @@ function isReported(dayIndex: number, name: string): boolean {
 async function onFeedbackMenu(info: { key: string | number }) {
   const stop = pendingStop.value
   pendingStop.value = null
-  if (!stop || !tripPlan.value?.id || reporting.value) return
-
-  reporting.value = true
-  try {
-    await sendPlanFeedback(tripPlan.value.id, {
-      day_index: stop.dayIndex,
-      target: 'attraction',
-      target_name: stop.name,
-      reason: String(info.key) as FeedbackReason
-    })
-    reportedStops.value = new Set([...reportedStops.value, stopKey(stop.dayIndex, stop.name)])
-    message.success('已记录，谢谢')
-  } catch (error) {
-    message.error(`反馈没有记上：${error instanceof Error ? error.message : '请稍后再试'}`)
-  } finally {
-    reporting.value = false
-  }
-}
-
-function persistPlan() {
-  if (tripPlan.value) {
-    sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
-  }
+  if (!stop) return
+  await reportStop(stop.dayIndex, stop.name, String(info.key) as FeedbackReason)
 }
 
 function confirmDelete() {
@@ -617,207 +545,6 @@ async function loadPlanFromRoute() {
     tripPlan.value = null
   }
 }
-
-async function initMap() {
-  const seq = ++mapInitSeq
-  mapReady.value = false
-  mapStatus.value = '正在准备地图'
-  const key = import.meta.env.VITE_AMAP_JS_KEY
-  const securityCode = import.meta.env.VITE_AMAP_SECURITY_CODE
-  if (!key) {
-    mapStatus.value = '未配置 VITE_AMAP_JS_KEY，当前显示为静态行程数据'
-    return
-  }
-  if (!allAttractions.value.length) {
-    mapStatus.value = '暂无景点坐标'
-    return
-  }
-
-  try {
-    await nextTick()
-    const first = allAttractions.value[0]
-    if (!first) {
-      mapStatus.value = '暂无景点坐标'
-      return
-    }
-    // AMap JS API 2.0 refuses to load without the security code that belongs to
-    // this key, and the loader gives no useful error otherwise.
-    if (securityCode) {
-      ;(
-        window as unknown as { _AMapSecurityConfig?: { securityJsCode: string } }
-      )._AMapSecurityConfig = { securityJsCode: securityCode }
-    }
-    const AMap = await AMapLoader.load({ key, version: '2.0' })
-    // A newer init (after a save/revise/unmount) started while we awaited the
-    // loader; drop this one instead of leaving two maps on the page.
-    if (seq !== mapInitSeq) return
-
-    mapInstance?.destroy()
-    mapInstance = null
-    const map = new AMap.Map('amap-container', {
-      zoom: 12,
-      center: [first.location.longitude, first.location.latitude]
-    })
-    mapInstance = map
-    allAttractions.value.forEach((attraction, index) => {
-      const marker = new AMap.Marker({
-        position: [attraction.location.longitude, attraction.location.latitude],
-        title: attraction.name,
-        label: { content: `${index + 1}`, direction: 'top' }
-      })
-      map.add(marker)
-    })
-    mapReady.value = true
-  } catch (error) {
-    mapStatus.value = describeMapFailure(error)
-  }
-}
-
-/**
- * Turn an AMap loader failure into the one sentence that tells you what to fix.
- *
- * "检查高德 JS Key" was the whole message before, which sent a real user looking at
- * a key that was fine: the actual cause was a missing security code, which AMap
- * requires for a JS API key and never mentions without decoding the error.
- */
-function describeMapFailure(error: unknown): string {
-  const detail = error instanceof Error ? error.message : String(error)
-  if (/INVALID_USER_SCODE|USER_SCODE|securityJsCode/i.test(detail)) {
-    return '地图加载失败：缺少「安全密钥」。到高德控制台这个 JS API Key 的安全密钥里复制，填进 frontend/.env 的 VITE_AMAP_SECURITY_CODE'
-  }
-  if (/INVALID_USER_KEY|USERKEY_PLAT_NOMATCH|INVALID_USER_DOMAIN/i.test(detail)) {
-    return '地图加载失败：Key 类型不对。需要「Web端(JS API)」的 Key，不能用「Web服务」的 Key'
-  }
-  if (/REFERER|DOMAIN_WHITE/i.test(detail)) {
-    return '地图加载失败：这个域名不在该 Key 的白名单里'
-  }
-  return `地图加载失败：${detail.slice(0, 120)}`
-}
-
-/**
- * Expand every day card and wait for the lazy images, so a capture or a print
- * shows the whole plan. Returns a function that restores what was expanded.
- */
-async function revealWholePlan(): Promise<() => void> {
-  const visibleDays = [...expandedDayIndices.value]
-  if (!tripPlan.value) return () => undefined
-  expandedDayIndices.value = tripPlan.value.days.map((_, index) => index)
-  await nextTick()
-  // Day cards use loading="lazy": sections revealed just now are often not
-  // decoded yet, and html2canvas would capture them as blank boxes.
-  const element = document.getElementById('trip-plan-content')
-  const images = element ? Array.from(element.querySelectorAll('img')) : []
-  await Promise.all(
-    images.map((image) =>
-      image.complete ? Promise.resolve() : image.decode().catch(() => undefined)
-    )
-  )
-  return () => {
-    expandedDayIndices.value = visibleDays
-  }
-}
-
-async function capturePlanContent() {
-  const element = document.getElementById('trip-plan-content')
-  if (!element || !tripPlan.value) return null
-  // html2canvas is heavy and only needed on export: load it on demand.
-  const { default: html2canvas } = await import('html2canvas')
-  const restore = await revealWholePlan()
-  try {
-    return await html2canvas(element, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
-  } finally {
-    restore()
-  }
-}
-
-async function exportAsImage() {
-  if (!tripPlan.value || exporting.value) return
-  exporting.value = 'image'
-  try {
-    const canvas = await capturePlanContent()
-    if (!canvas) return
-    const link = document.createElement('a')
-    link.download = `${tripPlan.value.city}旅行计划.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
-  } catch (error) {
-    message.error(`导出图片失败：${error instanceof Error ? error.message : '请稍后再试'}`)
-  } finally {
-    exporting.value = ''
-  }
-}
-
-async function exportAsPDF() {
-  if (!tripPlan.value || exporting.value) return
-  exporting.value = 'pdf'
-  try {
-    const canvas = await capturePlanContent()
-    if (!canvas) return
-    const { default: jsPDF } = await import('jspdf')
-    const pdf = new jsPDF('p', 'mm', 'a4')
-    const margin = 8
-    const contentWidth = 210 - margin * 2
-    const scale = contentWidth / canvas.width
-    const slices = paginateCanvas(canvas.width, canvas.height)
-
-    slices.forEach((slice, index) => {
-      const pageCanvas = document.createElement('canvas')
-      pageCanvas.width = canvas.width
-      pageCanvas.height = slice.height
-      const context = pageCanvas.getContext('2d')
-      if (!context) return
-      context.drawImage(
-        canvas,
-        0,
-        slice.offsetY,
-        canvas.width,
-        slice.height,
-        0,
-        0,
-        canvas.width,
-        slice.height
-      )
-      if (index > 0) pdf.addPage()
-      // JPEG, not PNG: a two-day plan was a multi-megabyte file when every page
-      // was a lossless screenshot, and the content is text on white.
-      pdf.addImage(
-        pageCanvas.toDataURL('image/jpeg', 0.92),
-        'JPEG',
-        margin,
-        margin,
-        contentWidth,
-        slice.height * scale
-      )
-    })
-
-    pdf.save(`${tripPlan.value.city}旅行计划.pdf`)
-  } catch (error) {
-    message.error(`导出 PDF 失败：${error instanceof Error ? error.message : '请稍后再试'}`)
-  } finally {
-    exporting.value = ''
-  }
-}
-
-async function printPlan() {
-  if (!tripPlan.value || exporting.value) return
-  exporting.value = 'print'
-  const restore = await revealWholePlan()
-  try {
-    // The print dialog's "save as PDF" produces real, selectable text with the
-    // system's own Chinese font; the raster export stays for pixel-exact layout.
-    window.print()
-  } finally {
-    restore()
-    exporting.value = ''
-  }
-}
-
-onBeforeUnmount(() => {
-  // Invalidates any in-flight init and releases the map's listeners and DOM.
-  mapInitSeq += 1
-  mapInstance?.destroy()
-  mapInstance = null
-})
 
 onMounted(async () => {
   await loadPlanFromRoute()

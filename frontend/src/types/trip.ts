@@ -57,6 +57,12 @@ export interface RouteLeg {
   mode: string
 }
 
+export interface TimelineSlot {
+  start: string
+  end: string
+  name: string
+}
+
 export interface DayPlan {
   date: string
   day_index: number
@@ -66,6 +72,7 @@ export interface DayPlan {
   hotel?: Hotel | null
   attractions: Attraction[]
   routes: RouteLeg[]
+  timeline?: TimelineSlot[]
 }
 
 export interface WeatherInfo {
@@ -90,6 +97,12 @@ export interface TripPlanRequest {
   budget: '经济' | '中等' | '舒适' | '豪华'
   transportation: string
   accommodation: string
+  /** Places the traveller insists on; the server looks them up and requires them. */
+  must_visit?: string[]
+  /** "15:00" means the first day starts in the afternoon. */
+  arrival_time?: string | null
+  /** "12:00" means the last day ends around noon. */
+  departure_time?: string | null
 }
 
 export interface TripPlan {
