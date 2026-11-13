@@ -1,4 +1,4 @@
-﻿name: Live eval
+name: Live eval
 
 # Manual, because it spends real money: a full run is `limit` real plan
 # generations against whatever model the repository is configured with. Run it
@@ -22,11 +22,6 @@ on:
         description: "Fail when more than this share fell back to the rule planner (the model never answered)"
         required: false
         default: "0.2"
-      judge:
-        description: "Also run the LLM-as-judge pass (one more model call per case)"
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -84,7 +79,6 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --min-usable-ratio "${{ inputs.min_usable_ratio }}" \
             --max-degraded-ratio "${{ inputs.max_degraded_ratio }}" \
-            ${{ inputs.judge && '--judge' || '' }} \
             --out live-eval.md
 
       # The report is written before the gate decides, so it exists even when the
