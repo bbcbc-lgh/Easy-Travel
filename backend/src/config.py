@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_max_tokens: int = 0
     llm_reasoning_effort: str = ""
+    #: Ask the provider to enforce the response schema. Off by default because a
+    #: service that does not implement `json_schema` rejects the request outright,
+    #: and "any OpenAI-compatible endpoint" is a promise this project keeps.
+    llm_json_schema: bool = False
     llm_total_budget_seconds: float = 150.0
     llm_profiles: list[ModelProfile] = Field(default_factory=list)
 
@@ -48,6 +52,15 @@ class Settings(BaseSettings):
     plan_max_concurrency: int = 2
     plan_queue_timeout_seconds: float = 8.0
     plan_max_revisions: int = 1
+    #: Two calls instead of one: the model first chooses *where to go*, and the
+    #: day prose is written only after trimming has settled the final stops. This
+    #: is what makes a 14-day trip survive: one response holding every day's
+    #: attractions *and* prose hits the output limit and has to be retried whole.
+    plan_two_phase: bool = True
+    #: One bounded retrieval retry: if the model names a stop the candidate pool
+    #: did not contain, the server looks that name up and asks again once. Bounded
+    #: by construction - one extra planning call, at most five extra candidates.
+    plan_tool_loop: bool = True
 
     cache_enabled: bool = True
     cache_ttl_seconds: int = 600
@@ -97,6 +110,7 @@ class Settings(BaseSettings):
                 max_tokens=self.llm_max_tokens,
                 supports_reasoning_effort=bool(self.llm_reasoning_effort),
                 reasoning_effort=self.llm_reasoning_effort or None,
+                supports_json_schema=self.llm_json_schema,
             )
         ]
 
@@ -116,6 +130,7 @@ class Settings(BaseSettings):
             "llm.enabled": self.has_llm,
             "llm.profiles": profiles,
             "llm.total_budget_seconds": self.llm_total_budget_seconds,
+            "llm.json_schema": self.llm_json_schema,
             "llm.api_key_set": key["set"],
             "llm.api_key_length": key["length"],
             "amap.enabled": self.has_amap,
@@ -130,6 +145,8 @@ class Settings(BaseSettings):
             "cost_guard.max_concurrency": self.plan_max_concurrency,
             "cost_guard.queue_timeout_seconds": self.plan_queue_timeout_seconds,
             "quality.max_revisions": self.plan_max_revisions,
+            "planner.two_phase": self.plan_two_phase,
+            "planner.tool_loop": self.plan_tool_loop,
             "cache.enabled": self.cache_enabled,
             "cache.ttl_seconds": self.cache_ttl_seconds,
             "cors_origins": self.cors_origin_list,

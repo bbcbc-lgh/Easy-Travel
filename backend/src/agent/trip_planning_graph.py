@@ -13,7 +13,8 @@ from src.agent.review_agent import ReviewAgent
 from src.agent.weather_agent import WeatherQueryAgent
 from src.model.schemas import Attraction, Hotel, TripPlan, TripPlanRequest, WeatherInfo
 from src.planning.critic import PlanCritic, attach_critique
-from src.planning.density import trim_days_to_load
+from src.planning.density import parse_clock, trim_days_to_load
+from src.planning.timeline import DEFAULT_START_MINUTE, build_timeline, schedule_day
 from src.service.amap import AMapService
 from src.service.logging import log_event
 
@@ -88,6 +89,8 @@ class TripPlanningGraph:
         builder.add_node("create_plan", self._create_plan)
         builder.add_node("enrich_routes", self._enrich_routes)
         builder.add_node("review_plan", self._review_plan)
+        builder.add_node("build_timeline", self._build_timeline)
+        builder.add_node("describe_plan", self._describe_plan)
 
         builder.add_edge(START, "collect_candidates")
         builder.add_edge("collect_candidates", "create_plan")
@@ -96,13 +99,31 @@ class TripPlanningGraph:
         builder.add_conditional_edges(
             "review_plan",
             self._route_after_review,
-            {"replan": "create_plan", "done": END},
+            {"replan": "create_plan", "done": "build_timeline"},
         )
+        builder.add_edge("build_timeline", "describe_plan")
+        builder.add_edge("describe_plan", END)
         return builder.compile()
 
     async def run(self, request: TripPlanRequest, on_event: ProgressCallback | None = None) -> TripPlan:
+        started = perf_counter()
         state = await self.graph.ainvoke({"request": request, "revision": 0, "on_event": on_event})
-        return _require_plan(state)
+        plan = _require_plan(state)
+        # One event for the whole request. `llm.completed` already reports each
+        # call, but "how long does a *trip* take" is a different question - and the
+        # one the user experiences. Reporting only per-call latency makes a
+        # two-phase pipeline look twice as fast as it is.
+        log_event(
+            logger,
+            "planner.finished",
+            elapsed_ms=round((perf_counter() - started) * 1000, 1),
+            city=request.city,
+            days=len(plan.days),
+            degraded=plan.degraded,
+            revisions=state.get("revision", 0),
+            attractions=sum(len(day.attractions) for day in plan.days),
+        )
+        return plan
 
     @staticmethod
     async def _emit(state: TripPlanningState, stage: str, status: str, **fields: Any) -> None:
@@ -192,7 +213,7 @@ class TripPlanningGraph:
             # Last resort: the model had its chance, so make the day fit by
             # arithmetic. Recalculate the routes of the days that lost a stop,
             # otherwise the route list still points at a place that is gone.
-            trimmed, changed_days = trim_days_to_load(plan)
+            trimmed, changed_days = trim_days_to_load(plan, request)
             if changed_days:
                 plan = await self.amap_service.enrich_daily_routes(plan, request, changed_days)
                 critique = self.critic.review(request, plan)
@@ -241,3 +262,87 @@ class TripPlanningGraph:
     @staticmethod
     def _route_after_review(state: TripPlanningState) -> str:
         return "replan" if state.get("feedback") else "done"
+
+    async def _build_timeline(self, state: TripPlanningState) -> TripPlanningState:
+        """Put the day's stops on a clock, inside their opening hours where known.
+
+        Before ``describe_plan`` on purpose: if the order changes to fit opening
+        hours, the prose should describe the order that actually ships.
+        """
+        request = _require_request(state)
+        plan = _require_plan(state)
+        started = perf_counter()
+        await self._emit(state, "build_timeline", "start")
+
+        warnings: list[str] = []
+        changed: set[int] = set()
+        for day in plan.days:
+            before = [item.name for item in day.attractions]
+            start_minute = DEFAULT_START_MINUTE
+            if day.day_index == 0:
+                arrival = parse_clock(request.arrival_time)
+                if arrival is not None:
+                    start_minute = max(arrival, 0)
+            scheduled, day_warnings = schedule_day(day, start_minute)
+            warnings.extend(day_warnings)
+            if [item.name for item in scheduled.attractions] != before:
+                changed.add(day.day_index)
+
+        if changed:
+            # The order moved, so the legs between stops are stale.
+            try:
+                plan = await self.amap_service.enrich_daily_routes(plan, request, changed)
+                for day in plan.days:
+                    day.timeline = build_timeline(day)
+            except Exception as exc:  # noqa: BLE001 - the timetable still works without routes
+                log_event(
+                    logger,
+                    "planner.timeline_route_refresh_failed",
+                    level=logging.WARNING,
+                    reason=type(exc).__name__,
+                    days=sorted(changed),
+                )
+
+        if warnings and plan.quality is not None:
+            plan.quality.warnings.extend(dict.fromkeys(warnings))
+
+        await self._emit(
+            state,
+            "build_timeline",
+            "done",
+            elapsed_ms=round((perf_counter() - started) * 1000, 1),
+            reordered_days=len(changed),
+        )
+        return {"plan": plan}
+
+    async def _describe_plan(self, state: TripPlanningState) -> TripPlanningState:
+        """Last step: prose for the stops that survived the critic and the trim.
+
+        Deliberately after ``review_plan``: a description written before trimming
+        describes a stop the plan no longer contains, which is why the old prompt
+        forbade naming places at all.
+        """
+        started = perf_counter()
+        await self._emit(state, "describe_plan", "start")
+
+        async def on_delta(text: str) -> None:
+            callback = state.get("on_event")
+            if callback is None:
+                return
+            try:
+                await callback({"type": "day_description_delta", "text": text})
+            except Exception:  # noqa: BLE001 - reporting must never break planning
+                logger.debug("description delta callback failed", exc_info=True)
+
+        plan = await self.planner_agent.describe(
+            _require_plan(state),
+            _require_request(state),
+            on_delta=on_delta if state.get("on_event") is not None else None,
+        )
+        await self._emit(
+            state,
+            "describe_plan",
+            "done",
+            elapsed_ms=round((perf_counter() - started) * 1000, 1),
+        )
+        return {"plan": plan}

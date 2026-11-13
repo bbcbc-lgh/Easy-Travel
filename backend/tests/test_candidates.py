@@ -6,14 +6,28 @@ admission filter, and by the keyword list. And a spicy fish hotpot was offered a
 breakfast, because the deny list only knew the generic words.
 """
 
+import asyncio
 from datetime import date
 
-from src.model.schemas import TripPlanRequest
+import httpx
+
+from src.config import Settings
+from src.model.schemas import Attraction, Location, TripPlanRequest
 from src.service.amap import AMapService
 
 MALL = {"name": "观山湖万达广场", "type": "购物服务;购物中心;购物中心", "location": "106.6,26.6"}
 SUPERMARKET = {"name": "永辉超市", "type": "购物服务;超市;超市", "location": "106.6,26.6"}
 MUSEUM = {"name": "贵州博物馆", "type": "科教文化服务;博物馆;博物馆", "location": "106.6,26.6"}
+
+
+def attraction(name: str, category: str) -> Attraction:
+    return Attraction(
+        name=name,
+        address="贵阳市",
+        location=Location(longitude=106.6, latitude=26.6),
+        category=category,
+        source="amap",
+    )
 
 
 def request(preferences: str) -> TripPlanRequest:
@@ -66,3 +80,98 @@ class TestBalance:
         cap = AMapService._shopping_cap(10)
         assert 0 < cap < 10
         assert AMapService._shopping_cap(2) == 1
+
+
+class TestDiversityTopUp:
+    """A museum-only pool cannot yield a nature trip, however well the model chooses."""
+
+    def _service(self) -> AMapService:
+        return AMapService(Settings(amap_web_service_key="test-key", cache_enabled=False))
+
+    def _pool(self, count: int = 4) -> list[Attraction]:
+        return [attraction(f"博物馆{i}", "科教文化服务;博物馆;博物馆") for i in range(count)]
+
+    def _park(self, name: str) -> dict:
+        return {"name": name, "type": "风景名胜;公园广场;公园", "location": "106.6,26.6"}
+
+    def test_a_museum_heavy_pool_is_topped_up_with_parks(self, monkeypatch) -> None:
+        service = self._service()
+        calls: list[dict] = []
+
+        async def fake_search(**kwargs):
+            calls.append(kwargs)
+            return [self._park("黔灵山公园"), self._park("观山湖公园")]
+
+        monkeypatch.setattr(service, "_search_pois", fake_search)
+
+        result = asyncio.run(service._top_up_diversity(request("自然风光"), self._pool()))
+
+        assert calls, "the top-up search should have run"
+        assert any(item.name == "黔灵山公园" for item in result)
+        assert len(result) == 6
+
+    def test_a_history_trip_does_not_get_parks_pushed_at_it(self, monkeypatch) -> None:
+        service = self._service()
+
+        async def fake_search(**kwargs):  # pragma: no cover - must not run
+            raise AssertionError("no top-up expected for a history trip")
+
+        monkeypatch.setattr(service, "_search_pois", fake_search)
+
+        result = asyncio.run(service._top_up_diversity(request("历史文化"), self._pool()))
+
+        assert len(result) == 4
+
+    def test_a_balanced_pool_is_left_alone(self, monkeypatch) -> None:
+        service = self._service()
+        pool = [
+            attraction("博物馆", "科教文化服务;博物馆;博物馆"),
+            attraction("公园", "风景名胜;公园广场;公园"),
+            attraction("老街", "购物服务;特色街区"),
+            attraction("湖", "风景名胜;公园广场;公园"),
+        ]
+
+        async def fake_search(**kwargs):  # pragma: no cover - must not run
+            raise AssertionError("no top-up expected: the pool is already mixed")
+
+        monkeypatch.setattr(service, "_search_pois", fake_search)
+
+        result = asyncio.run(service._top_up_diversity(request("自然风光"), pool))
+
+        assert len(result) == 4
+
+    def test_a_place_already_in_the_pool_is_not_added_twice(self, monkeypatch) -> None:
+        service = self._service()
+
+        async def fake_search(**kwargs):
+            return [self._park("博物馆0")]
+
+        monkeypatch.setattr(service, "_search_pois", fake_search)
+
+        result = asyncio.run(service._top_up_diversity(request("自然风光"), self._pool()))
+
+        assert [item.name for item in result].count("博物馆0") == 1
+
+    def test_a_failed_top_up_leaves_the_pool_untouched(self, monkeypatch) -> None:
+        service = self._service()
+
+        async def failing_search(**kwargs):
+            raise httpx.ConnectError("boom")
+
+        monkeypatch.setattr(service, "_search_pois", failing_search)
+
+        result = asyncio.run(service._top_up_diversity(request("自然风光"), self._pool()))
+
+        assert len(result) == 4
+
+    def test_the_top_up_is_capped(self, monkeypatch) -> None:
+        service = self._service()
+
+        async def fake_search(**kwargs):
+            return [self._park(f"公园{i}") for i in range(10)]
+
+        monkeypatch.setattr(service, "_search_pois", fake_search)
+
+        result = asyncio.run(service._top_up_diversity(request("休闲"), self._pool()))
+
+        assert len(result) == 4 + 3

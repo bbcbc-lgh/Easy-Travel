@@ -9,22 +9,24 @@ from datetime import date
 
 from evals.usability import RULES, Failure, assess, summarise
 from src.model.schemas import Attraction, DayPlan, Hotel, Location, TripPlan, TripPlanRequest
-from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS
+from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS, PlanCritic
 from src.planning.density import DAILY_LOAD_LIMIT
 
 HANGZHOU = Location(longitude=120.15, latitude=30.27)
 
 
-def request(budget: str = "中等", days: int = 2) -> TripPlanRequest:
-    return TripPlanRequest(
-        city="杭州",
-        start_date=date(2026, 12, 1),
-        days=days,
-        preferences="历史文化",
-        budget=budget,
-        transportation="公共交通",
-        accommodation="经济型酒店",
-    )
+def request(budget: str = "中等", days: int = 2, **overrides) -> TripPlanRequest:
+    payload = {
+        "city": "杭州",
+        "start_date": date(2026, 12, 1),
+        "days": days,
+        "preferences": "历史文化",
+        "budget": budget,
+        "transportation": "公共交通",
+        "accommodation": "经济型酒店",
+    }
+    payload.update(overrides)
+    return TripPlanRequest(**payload)
 
 
 def attraction(
@@ -153,7 +155,7 @@ def test_every_rule_has_a_stable_key() -> None:
         "day_load",
         "open_on_the_day",
         "no_duplicates",
-        "description_is_stable",
+        "description_is_scoped",
     ]
 
 
@@ -180,14 +182,39 @@ def test_summary_of_nothing_is_zero_not_a_crash() -> None:
     assert summary.usable_ratio == 0.0
 
 
-def test_a_description_naming_a_stop_is_unusable() -> None:
-    """If the plan is re-cut, prose that names a stop becomes a lie."""
+def test_a_description_naming_its_own_stop_is_fine() -> None:
+    """Two-phase planning writes prose after trimming, so naming the stops is safe."""
     day_plan = day()
     day_plan.description = f"上午去{day_plan.attractions[0].name}，下午休息。"
 
     verdict = assess(trip(day_plan), request(), "named")
 
-    assert "description_is_stable" in {f.rule for f in verdict.failures}
+    assert verdict.usable is True
+
+
+def test_a_description_naming_another_days_stop_is_unusable() -> None:
+    """Prose that names another day's stop contradicts the route as soon as it moves."""
+    first = day(0, attractions=[attraction("西湖")])
+    second = day(1, attractions=[attraction("灵隐寺")], when="2026-12-02")
+    second.description = "上午去西湖，下午休息。"
+
+    verdict = assess(trip(first, second), request(), "cross-day")
+
+    assert "description_is_scoped" in {f.rule for f in verdict.failures}
+
+
+def test_a_longer_name_containing_another_days_name_is_not_a_leak() -> None:
+    """Regression: "天安门广场" contains "天安门", which sat on another day.
+
+    The substring hit failed a correct plan and would have replaced good prose.
+    """
+    first = day(0, attractions=[attraction("天安门广场")])
+    first.description = "上午在天安门广场看升旗，午后休息。"
+    second = day(1, attractions=[attraction("天安门")], when="2026-12-02")
+
+    verdict = assess(trip(first, second), request(), "substring")
+
+    assert "description_is_scoped" not in {f.rule for f in verdict.failures}
 
 
 def test_a_description_about_pace_is_fine() -> None:
@@ -197,3 +224,31 @@ def test_a_description_about_pace_is_fine() -> None:
     verdict = assess(trip(day_plan), request(), "pace")
 
     assert verdict.usable is True
+
+
+def test_the_eval_and_the_product_agree_on_how_long_a_day_is() -> None:
+    """Same rule, same numbers: a shortened day is short for the critic too.
+
+    If these two ever measure against different limits, the eval stops describing
+    the product and starts describing itself.
+    """
+    plan_day = day(
+        attractions=[
+            attraction("国博", category="科教文化服务;博物馆"),
+            attraction("老街", category="购物服务;特色街区"),
+        ]
+    )
+
+    def critic_flags(req) -> bool:
+        critique = PlanCritic().review(req, trip(plan_day))
+        return any("走不完" in issue for issue in critique.issues)
+
+    def eval_flags(req) -> bool:
+        verdict = assess(trip(plan_day), req, "capacity")
+        return "day_load" in {failure.rule for failure in verdict.failures}
+
+    relaxed = request()
+    shortened = request(arrival_time="15:00")
+
+    assert critic_flags(relaxed) is eval_flags(relaxed) is False
+    assert critic_flags(shortened) is eval_flags(shortened) is True

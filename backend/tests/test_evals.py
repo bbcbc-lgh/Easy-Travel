@@ -4,7 +4,6 @@ from datetime import date
 import pytest
 
 from evals.gates import summarise, violations
-from evals.judge import build_plan_summary
 from evals.metrics import (
     CaseMetrics,
     budget_deviation,
@@ -125,11 +124,21 @@ def test_price_counts_distinguish_sources() -> None:
     assert estimated >= 0
 
 
-def test_preference_hit_rate_matches_keywords() -> None:
+def test_preference_hit_rate_matches_venue_type() -> None:
     plan = build_plan(days=1, day_attractions=2)
+    for item in plan.days[0].attractions:
+        item.category = "科教文化服务;博物馆;博物馆"
 
     assert preference_hit_rate(plan, request(preferences="历史文化")) == 1.0
     assert preference_hit_rate(plan, request(preferences="亲子")) == 0.0
+
+
+def test_a_nature_plan_scores_nature_not_history() -> None:
+    """The fixture's venues are 风景名胜; the old name-based metric got this wrong."""
+    plan = build_plan(days=1, day_attractions=2)
+
+    assert preference_hit_rate(plan, request(preferences="自然风光")) == 1.0
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 0.0
 
 
 def test_preference_hit_rate_ignores_model_prose() -> None:
@@ -143,10 +152,67 @@ def test_preference_hit_rate_ignores_model_prose() -> None:
     for day in plan.days:
         for index, item in enumerate(day.attractions):
             item.name = f"杭州地标{index}"
-            item.category = "地标"
+            # A mapped type that does not match the request, so the only thing that
+            # could earn a hit here is the prose - which is the point of the test.
+            item.category = "风景名胜;公园广场;公园"
             item.description = "已结合你的偏好：历史文化，带儿童出行，需要无障碍设施。"
 
     assert preference_hit_rate(plan, request(preferences="历史文化")) == 0.0
+
+
+def test_an_unmappable_type_is_not_measured_rather_than_scored_zero() -> None:
+    """A type nobody can map means "this plan cannot be judged on preference".
+
+    Reporting 0% made a photography trip (风景名胜 / 城市广场, no live type for
+    "摄影") look like a total miss, and would have driven the wrong fix.
+    """
+    plan = build_plan(days=1, day_attractions=2)
+    for item in plan.days[0].attractions:
+        item.category = "某个没映射过的类型"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) is None
+
+
+def test_a_mapped_but_mismatched_type_is_still_zero() -> None:
+    """None means "could not measure"; 0.0 means "measured and no match"."""
+    plan = build_plan(days=1, day_attractions=2)
+    for item in plan.days[0].attractions:
+        item.category = "风景名胜;公园广场;公园"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 0.0
+
+
+def test_a_multi_valued_segment_is_read_through_the_pipe() -> None:
+    """AMap returns "博物馆|风景名胜"; splitting on ";" alone left it unmapped."""
+    plan = build_plan(days=1, day_attractions=1)
+    plan.days[0].attractions[0].category = "科教文化服务;博物馆|风景名胜"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 1.0
+
+
+def test_preference_hit_rate_ignores_the_venue_name() -> None:
+    """Regression: a name that contains a keyword is not a type that matches it.
+
+    "博物馆奇妙夜主题乐园" is a theme park. The old metric matched keywords against
+    ``name + category``, so it scored as 历史文化 and inflated every plan that
+    happened to contain a place with a promising name.
+    """
+    plan = build_plan(days=1, day_attractions=2)
+    for item in plan.days[0].attractions:
+        item.name = "博物馆奇妙夜主题乐园"
+        item.category = "游乐场"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 0.0
+    assert preference_hit_rate(plan, request(preferences="亲子")) == 1.0
+
+
+def test_preference_hit_rate_reads_the_amap_type_hierarchy() -> None:
+    plan = build_plan(days=1, day_attractions=1)
+    plan.days[0].attractions[0].name = "某个地方"
+    plan.days[0].attractions[0].category = "科教文化服务;博物馆;博物馆"
+
+    assert preference_hit_rate(plan, request(preferences="历史文化")) == 1.0
+    assert preference_hit_rate(plan, request(preferences="自然风光")) == 0.0
 
 
 def test_reference_budget_grows_with_tier() -> None:
@@ -209,12 +275,16 @@ def test_a_failed_case_is_recorded_instead_of_raising() -> None:
     assert result.metrics.degraded is True
 
 
-def test_judge_summary_lists_every_day() -> None:
-    summary = build_plan_summary(build_plan(days=3))
+def test_a_judged_summary_is_no_longer_part_of_the_harness() -> None:
+    """The LLM judge was measured and removed; the harness must not expose it.
 
-    assert "第 1 天" in summary
-    assert "第 3 天" in summary
-    assert "预算合计" in summary
+    Keeping a stub "just in case" would leave an unused path that looks like a
+    feature - this project deletes unreachable subsystems instead.
+    """
+    import evals
+
+    assert not hasattr(evals, "judge_plan")
+    assert not hasattr(evals, "JudgeVerdict")
 
 
 # --- gates: turning a score into a pass/fail signal ---------------------------

@@ -21,6 +21,8 @@ from src.model.schemas import (
 )
 from src.planning.critic import attach_critique
 from src.planning.reviser import PatchError
+from src.planning.timeline import schedule_day
+from src.service.amap import MustVisitNotFound
 from src.service.database import TripPlanRepository
 from src.service.generation_guard import GenerationGuard, QuotaExceededError, ServerBusyError
 from src.service.llm_gateway import LLMUnavailableError
@@ -62,6 +64,11 @@ async def create_trip_plan(
     try:
         async with guard.generation_slot(owner_id):
             plan = await pipeline.run(request)
+    except MustVisitNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_must_visit_detail(exc),
+        ) from exc
     except QuotaExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -114,6 +121,8 @@ async def stream_trip_plan(
             await queue.put(
                 {"type": "error", "code": 429, "detail": f"今日生成次数已达上限（{exc.limit} 次），请明天再试"}
             )
+        except MustVisitNotFound as exc:
+            await queue.put({"type": "error", "code": 422, "detail": _must_visit_detail(exc)})
         except ServerBusyError:
             await queue.put({"type": "error", "code": 429, "detail": "当前生成请求较多，请稍后重试"})
         except Exception as exc:  # noqa: BLE001 - the stream must always terminate with an error event
@@ -210,6 +219,11 @@ async def revise_trip_plan(
         ) from exc
     except PatchError as exc:
         raise HTTPException(status_code=422, detail=f"无法应用该修改：{exc}") from exc
+    except MustVisitNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_must_visit_detail(exc),
+        ) from exc
 
     try:
         revised = await pipeline.amap_service.enrich_daily_routes(revised, request)
@@ -345,6 +359,11 @@ async def update_trip_plan(
     return updated
 
 
+def _must_visit_detail(exc: MustVisitNotFound) -> str:
+    names = "、".join(f"「{name}」" for name in exc.names)
+    return f"找不到{names}，请换个写法（例如加上完整名称），或确认它确实在这个城市。"
+
+
 def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest, plan: TripPlan) -> TripPlan:
     """Re-score an edited plan and re-attach what the critic found.
 
@@ -352,7 +371,14 @@ def _score_and_critique(pipeline: TripPlanningPipeline, request: TripPlanRequest
     revisions go through this path instead, so the same warnings survive a manual
     change. ``will_retry=False``: a hand-edited plan is never sent back to the
     model, so anything it still gets wrong is reported rather than fixed.
+
+    The timetable is rebuilt here because editing reorders or replaces the day's
+    stops: a timeline computed before the edit points at the wrong place at the
+    wrong time, and an edit used to drop it entirely, so the times silently
+    disappeared from the page the moment someone touched the plan.
     """
+    for day in plan.days:
+        schedule_day(day)
     plan = pipeline.review_agent.run(request, plan)
     critique = pipeline.critic.review(request, plan)
     return attach_critique(plan, critique, will_retry=False)

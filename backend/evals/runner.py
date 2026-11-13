@@ -1,12 +1,11 @@
 """Runs the eval cases through the real planning pipeline and collects metrics."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from evals.judge import judge_plan
 from evals.metrics import CaseMetrics, measure
 from evals.usability import CaseUsability, assess
 from src.api.deps import TripPlanningPipeline
@@ -28,6 +27,10 @@ class EvalCase:
     budget: Literal["经济", "中等", "舒适", "豪华"]
     transportation: str
     accommodation: str
+    #: Optional so older case files keep working.
+    must_visit: list[str] = field(default_factory=list)
+    arrival_time: str | None = None
+    departure_time: str | None = None
 
     def to_request(self) -> TripPlanRequest:
         return TripPlanRequest(
@@ -38,6 +41,9 @@ class EvalCase:
             budget=self.budget,
             transportation=self.transportation,
             accommodation=self.accommodation,
+            must_visit=list(self.must_visit),
+            arrival_time=self.arrival_time,
+            departure_time=self.departure_time,
         )
 
 
@@ -48,13 +54,19 @@ class EvalResult:
     #: Whether a traveller could follow the plan as written; None when the case
     #: never produced one.
     usability: CaseUsability | None = None
-    judge: dict | None = None
     error: str | None = None
 
 
-def load_cases(path: Path | None = None, limit: int | None = None) -> list[EvalCase]:
+def load_cases(
+    path: Path | None = None,
+    limit: int | None = None,
+    ids: list[str] | None = None,
+) -> list[EvalCase]:
     raw = json.loads((path or CASES_PATH).read_text(encoding="utf-8"))
     cases = [EvalCase(**item) for item in raw]
+    if ids:
+        wanted = set(ids)
+        cases = [case for case in cases if case.id in wanted]
     return cases[:limit] if limit else cases
 
 
@@ -66,7 +78,6 @@ def build_pipeline(mode: str) -> TripPlanningPipeline:
 async def run_case(
     case: EvalCase,
     pipeline: TripPlanningPipeline,
-    use_judge: bool = False,
     offline: bool = False,
 ) -> EvalResult:
     request = case.to_request()
@@ -83,22 +94,18 @@ async def run_case(
 
     metrics = measure(case.id, plan, request, offline=offline)
     usability = assess(plan, request, case.id)
-    verdict = None
-    if use_judge and not plan.degraded:
-        verdict = await judge_plan(pipeline.graph.planner_agent.llm_planner.gateway, plan)
-    return EvalResult(case=case, metrics=metrics, usability=usability, judge=verdict)
+    return EvalResult(case=case, metrics=metrics, usability=usability)
 
 
 async def run_all(
     cases: list[EvalCase],
     pipeline: TripPlanningPipeline,
-    use_judge: bool = False,
     offline: bool = False,
     on_progress=None,
 ) -> list[EvalResult]:
     results: list[EvalResult] = []
     for index, case in enumerate(cases):
-        result = await run_case(case, pipeline, use_judge, offline=offline)
+        result = await run_case(case, pipeline, offline=offline)
         results.append(result)
         if on_progress is not None:
             on_progress(result, index, len(cases))

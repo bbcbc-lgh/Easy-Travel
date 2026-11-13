@@ -16,8 +16,8 @@ __all__ = ["PlannerAgent", "PROMPT_VERSION"]
 class PlannerAgent:
     """Orchestrates planning: model first, deterministic geometry as fallback."""
 
-    def __init__(self, llm_gateway: LLMGateway):
-        self.llm_planner = LLMPlanner(llm_gateway)
+    def __init__(self, llm_gateway: LLMGateway, candidate_search=None):
+        self.llm_planner = LLMPlanner(llm_gateway, candidate_search=candidate_search)
         self.rule_planner = RulePlanner()
 
     async def run(
@@ -58,7 +58,7 @@ class PlannerAgent:
         else:
             plan.degraded = False
             plan.degraded_reason = None
-            return attach_data_notices(plan)
+            return attach_data_notices(plan, request)
 
         log_event(
             logger,
@@ -75,4 +75,15 @@ class PlannerAgent:
         fallback = await self.rule_planner.plan(request, candidates, feedback)
         fallback.degraded = True
         fallback.degraded_reason = reason
-        return attach_data_notices(fallback)
+        return attach_data_notices(fallback, request)
+
+    async def describe(self, plan: TripPlan, request: TripPlanRequest, on_delta=None) -> TripPlan:
+        """Write the day prose once the route is final.
+
+        Runs after the critic and any trimming, so the descriptions describe the
+        itinerary that actually shipped. A failure here is contained: the route is
+        already correct, so the fallback is a plain sentence, not a rule-planner
+        downgrade.
+        """
+        described = await self.llm_planner.describe(plan, request, on_delta=on_delta)
+        return attach_data_notices(described, request)

@@ -40,6 +40,8 @@ _WEEKDAY_RE = r"(?:星期[一二三四五六日天]|周[一二三四五六日天
 _RANGE_PATTERN = re.compile(rf"({_WEEKDAY_RE})\s*(?:至|到|-|~|—|－)\s*({_WEEKDAY_RE})")
 _TOKEN_PATTERN = re.compile(_WEEKDAY_RE)
 _CLAUSE_SPLIT = re.compile(r"[，,。;；\n]+")
+#: "09:00-17:00", "9:00~17:30", "09:00—16:30". Only a real clock range counts.
+_CLOCK_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—~至]\s*(\d{1,2}):(\d{2})")
 
 
 def _weekday_index(token: str) -> int:
@@ -97,6 +99,25 @@ def closed_weekdays(opening_hours: str | None) -> set[int] | None:
 
 def weekday_name(index: int) -> str:
     return WEEKDAY_NAMES[index % 7]
+
+
+def open_windows(opening_hours: str | None) -> list[tuple[int, int]] | None:
+    """Clock windows the venue is open, in minutes past midnight.
+
+    ``None`` when the text carries no clock range - which is the common case for
+    AMap. Callers must treat that as "cannot tell", never as "open all day": the
+    whole point of this module is not to invent opening hours.
+    """
+    if not opening_hours:
+        return None
+    windows: list[tuple[int, int]] = []
+    for match in _CLOCK_RANGE.finditer(opening_hours):
+        start_hour, start_minute, end_hour, end_minute = (int(part) for part in match.groups())
+        start = start_hour * 60 + start_minute
+        end = end_hour * 60 + end_minute
+        if 0 <= start < 24 * 60 and 0 <= end < 24 * 60 and end > start:
+            windows.append((start, end))
+    return windows or None
 
 
 def is_closed_on(opening_hours: str | None, weekday: int) -> bool | None:

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -80,7 +81,7 @@ class FakeClient:
         self.responses = list(responses)
         self.calls: list[list[dict[str, str]]] = []
 
-    async def complete(self, messages: list[dict[str, str]]) -> LLMCompletion:
+    async def complete(self, messages: list[dict[str, str]], *, schema: dict | None = None) -> LLMCompletion:
         self.calls.append(messages)
         item = self.responses.pop(0)
         if isinstance(item, Exception):
@@ -257,6 +258,10 @@ def test_planner_logs_model_provenance_on_success() -> None:
     )
 
     class OkGateway:
+        # Single-phase, because this test asserts the model's own day prose reaches
+        # the plan; two-phase writes prose in a second call that never happens here.
+        settings = SimpleNamespace(plan_two_phase=False)
+
         async def generate_json(self, *args, **kwargs):
             return LLMGeneration(
                 payload={},

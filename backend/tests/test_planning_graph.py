@@ -55,12 +55,18 @@ class ScriptedPlanner:
         self.plans = plans
         self.calls = 0
         self.feedbacks: list[list[str] | None] = []
+        self.described = 0
 
     async def run(self, req, attractions, hotels, weather, feedback=None):
         self.feedbacks.append(feedback)
         plan = self.plans[min(self.calls, len(self.plans) - 1)]
         self.calls += 1
         return deepcopy(plan)
+
+    async def describe(self, plan, req, on_delta=None):
+        """The graph's last prose step; these tests are about the route, not the text."""
+        self.described += 1
+        return plan
 
 
 def build_plan(prefix: str) -> TripPlan:

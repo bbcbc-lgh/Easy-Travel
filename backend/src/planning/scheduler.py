@@ -127,26 +127,40 @@ def build_days(
 def enforce_load(
     groups: list[list[Attraction]],
     load_of,
-    max_load: float,
+    max_load: float | list[float],
     max_per_day: int = MAX_ATTRACTIONS_PER_DAY,
 ) -> list[list[Attraction]]:
     """Move or drop stops until each day fits the load budget.
 
+    ``max_load`` may be one number or one per day: a late arrival or an early
+    departure makes that day shorter, and the rule planner has to honour the same
+    capacity the critic will measure it against.
+
     Used by the deterministic planner: a fallback plan should not claim that
     three museums fit in one day.
     """
+    capacities = max_load if isinstance(max_load, list) else [max_load] * len(groups)
+
+    def capacity_of(index: int) -> float:
+        return capacities[index] if index < len(capacities) else capacities[-1]
+
     overflow: list[Attraction] = []
-    for group in groups:
-        while len(group) > 1 and sum(load_of(item) for item in group) > max_load:
+    for index, group in enumerate(groups):
+        while len(group) > 1 and sum(load_of(item) for item in group) > capacity_of(index):
             overflow.append(group.pop())
 
     for item in overflow:
         candidates = [
-            group
-            for group in groups
-            if len(group) < max_per_day and sum(load_of(existing) for existing in group) + load_of(item) <= max_load
+            index
+            for index, group in enumerate(groups)
+            if len(group) < max_per_day
+            and sum(load_of(existing) for existing in group) + load_of(item) <= capacity_of(index)
         ]
         if not candidates:
             continue
-        min(candidates, key=lambda group: sum(load_of(existing) for existing in group)).append(item)
+        target = min(
+            candidates,
+            key=lambda index: sum(load_of(existing) for existing in groups[index]),
+        )
+        groups[target].append(item)
     return groups

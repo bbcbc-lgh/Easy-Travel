@@ -28,7 +28,7 @@ class TripPlanningPipeline:
         self.attraction_agent = AttractionSearchAgent(amap_service)
         self.weather_agent = WeatherQueryAgent(amap_service)
         self.hotel_agent = HotelAgent(amap_service)
-        self.planner_agent = PlannerAgent(llm_gateway)
+        self.planner_agent = PlannerAgent(llm_gateway, candidate_search=amap_service.search_by_name)
         self.reviser = PlanReviser(llm_gateway)
         self.review_agent = ReviewAgent()
         self.critic = PlanCritic()

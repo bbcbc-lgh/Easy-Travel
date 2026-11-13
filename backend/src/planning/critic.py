@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
-from src.planning.density import DAILY_LOAD_LIMIT, day_load, describe_load
+from src.planning import must_visit
+from src.planning.density import day_capacity, day_load, describe_load, is_outdoor
 from src.planning.hours import is_closed_on, weekday_name
 from src.planning.scheduler import haversine_meters
 from src.service.logging import log_event
@@ -12,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 DAY_TRAVEL_LIMIT_METERS = 20_000
 DAILY_ATTRACTION_LIMIT_MINUTES = 420
+
+#: Weather that makes an outdoor day a bad idea.
+_RAINY_TERMS = ("雨", "雪", "雷")
 
 
 @dataclass(slots=True)
@@ -49,6 +53,8 @@ class PlanCritic:
 
     def review(self, request: TripPlanRequest, plan: TripPlan) -> Critique:
         critique = Critique()
+        total_days = len(plan.days)
+        weather_by_date = {item.date: item for item in plan.weather_info}
 
         for day in plan.days:
             label = day.day_index + 1
@@ -77,16 +83,20 @@ class PlanCritic:
                     "说明只写活动类型、片区和节奏，不要提任何具体场所。"
                 )
 
-            if day_load(day) > DAILY_LOAD_LIMIT:
+            capacity = day_capacity(day.day_index, total_days, request)
+            if day_load(day) > capacity:
                 # An issue, not a note: the model chose these stops, so it can
                 # choose fewer. Filed as a note it only warned the user; a live
                 # eval run showed every model-built plan over-packing its days
                 # (load 4.0-6.0 against a 3.5 limit) while the rule planner, which
                 # enforces the limit, never does.
                 critique.issues.append(
-                    f"第 {label} 天安排了 {describe_load(day)}，按景点类型估算一天走不完，"
+                    f"第 {label} 天安排了 {describe_load(day, capacity)}，按景点类型估算一天走不完，"
                     "请减掉一个景点或换成更轻的安排。"
                 )
+
+        critique.issues.extend(self._must_visit_issues(request, plan))
+        critique.notes.extend(self._weather_notes(plan, weather_by_date))
 
         if critique.issues or critique.notes:
             log_event(
@@ -99,6 +109,53 @@ class PlanCritic:
                 notes=critique.notes,
             )
         return critique
+
+    @staticmethod
+    def _weather_notes(plan: TripPlan, weather_by_date: dict) -> list[str]:
+        """A rainy day spent entirely outdoors, as a note rather than a retry.
+
+        Not an issue on purpose: the model may not be able to fix it from the
+        candidates it was given, and this project does not spend a paid replan on
+        a hint. It still has to reach the user, because it changes what to pack.
+        """
+        notes: list[str] = []
+        for day in plan.days:
+            weather = weather_by_date.get(day.date)
+            if weather is None or not day.attractions:
+                continue
+            if not any(term in (weather.day_weather or "") for term in _RAINY_TERMS):
+                continue
+            outdoors = [is_outdoor(item) for item in day.attractions]
+            if any(value is True for value in outdoors) and not any(value is False for value in outdoors):
+                notes.append(
+                    f"第 {day.day_index + 1} 天预报{weather.day_weather}，当天安排的都是户外地点，"
+                    "建议准备一个室内备选或调整顺序。"
+                )
+        return notes
+
+    @staticmethod
+    def _must_visit_issues(request: TripPlanRequest, plan: TripPlan) -> list[str]:
+        """A place the traveller insists on must appear - exactly once.
+
+        An issue rather than a note: the model can move a stop between days, so a
+        missing or doubled must-visit is something it can fix in one retry.
+
+        Skipped entirely for a degraded plan. The rule planner cannot look a place
+        up, so on a sample-mode or fallback run this check can never be satisfied:
+        it would spend one redundant replan and then tell the user to "please make
+        sure it is scheduled", which is instruction they cannot act on. The data
+        notice in :mod:`src.planning.notices` says what actually happened instead.
+        """
+        if not request.must_visit or plan.degraded:
+            return []
+        placed = [item.name for day in plan.days for item in day.attractions]
+        issues = [
+            f"必去地点「{name}」没有出现在行程里，请务必安排到某一天。"
+            for name in must_visit.missing(request.must_visit, placed)
+        ]
+        for name in must_visit.duplicated(request.must_visit, placed):
+            issues.append(f"必去地点「{name}」被安排了不止一次，同一处只去一次就够。")
+        return issues
 
     @staticmethod
     def _closure_issues(day: DayPlan) -> list[str]:

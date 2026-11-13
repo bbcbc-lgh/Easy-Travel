@@ -68,7 +68,7 @@ def apply_edits(existing: TripPlan, incoming: TripPlan, request: TripPlanRequest
         degraded_reason=existing.degraded_reason,
     )
     plan.budget = calculate_budget(plan.days, request)
-    return attach_data_notices(plan)
+    return attach_data_notices(plan, request)
 
 
 def _name_key(name: str) -> str:

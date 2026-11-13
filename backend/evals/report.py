@@ -9,11 +9,16 @@ from evals.runner import EvalResult
 from evals.usability import RULES
 
 
+def _mean_of_measured(values) -> float | None:
+    """Average only what was actually measured; ``None`` means "not measured"."""
+    measured = [value for value in values if value is not None]
+    return mean(measured) if measured else None
+
+
 def _aggregate(results: list[EvalResult]) -> dict:
     metrics: list[CaseMetrics] = [result.metrics for result in results if result.error is None]
     if not metrics:
         return {"count": 0}
-    judges = [result.judge["score"] for result in results if result.judge]
     return {
         "count": len(metrics),
         "score": mean(m.score for m in metrics),
@@ -21,12 +26,25 @@ def _aggregate(results: list[EvalResult]) -> dict:
         "geo_max": max(m.max_intra_day_km for m in metrics),
         "degraded": sum(1 for m in metrics if m.degraded) / len(metrics),
         "structure": sum(1 for m in metrics if m.day_structure_ok) / len(metrics),
-        "preference": mean(m.preference_hit_rate for m in metrics),
+        "preference": _mean_of_measured(m.preference_hit_rate for m in metrics),
+        "preference_measured": sum(1 for m in metrics if m.preference_hit_rate is not None),
         "hours": mean(m.hours_known_rate for m in metrics),
         "budget": mean(m.budget_deviation for m in metrics),
         "errors": sum(1 for result in results if result.error),
-        "judge": mean(judges) if judges else None,
     }
+
+
+def _preference_row(stats: dict) -> str:
+    """0% and "cannot be measured" are different answers and must look different."""
+    value = stats.get("preference")
+    measured = stats.get("preference_measured", 0)
+    total = stats.get("count", 0)
+    if value is None:
+        return f"| 偏好命中率 | n/a | 没有可映射到偏好轴的景点类别（{total} 条用例均未测到） |"
+    note = "景点类别与所选偏好相符的比例"
+    if measured < total:
+        note += f"（{total - measured} 条用例的类型无法映射，未计入均值）"
+    return f"| 偏好命中率 | {value * 100:.0f}% | {note} |"
 
 
 def render_report(results: list[EvalResult], mode: str, generated_at: datetime, offline: bool = False) -> str:
@@ -58,26 +76,24 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
             f"| 单日折返最大 | {stats['geo_max']:.1f} km | 最差的一天 |",
             f"| 降级比例 | {stats['degraded'] * 100:.0f}% | 由规则引擎生成的比例 |",
             f"| 结构合规率 | {stats['structure'] * 100:.0f}% | 天数正确且每天 1–3 个景点 |",
-            f"| 偏好命中率 | {stats['preference'] * 100:.0f}% | 景点与所选偏好关键词的匹配比例 |",
+            _preference_row(stats),
             f"| 营业时间覆盖率 | {stats['hours'] * 100:.0f}% | 景点与餐饮中带营业时间数据的比例 |",
             f"| 预算偏差 | {stats['budget'] * 100:.0f}% | 与预算档位参考值的相对偏差 |",
         ]
-        if stats.get("judge") is not None:
-            lines.append(f"| 评审得分 | {stats['judge']:.2f} / 5 | LLM-as-judge 平均分 |")
     lines += [
         "",
         "## 明细",
         "",
-        "| 用例 | 得分 | 折返(km) | 天数 | 降级 | 偏好 | 预算偏差 | 评审 |",
-        "| --- | ---: | ---: | ---: | :---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 用例 | 得分 | 折返(km) | 天数 | 降级 | 偏好 | 预算偏差 |",
+        "| --- | ---: | ---: | ---: | :---: | ---: | ---: |",
     ]
     for result in results:
         m = result.metrics
-        judge = f"{result.judge['score']}" if result.judge else "-"
+        preference = "n/a" if m.preference_hit_rate is None else f"{m.preference_hit_rate * 100:.0f}%"
         lines.append(
             f"| {result.case.id} | {m.score:.1f} | {m.avg_intra_day_km:.1f} | {m.days} | "
-            f"{'是' if m.degraded else '否'} | {m.preference_hit_rate * 100:.0f}% | "
-            f"{m.budget_deviation * 100:.0f}% | {judge} |"
+            f"{'是' if m.degraded else '否'} | {preference} | "
+            f"{m.budget_deviation * 100:.0f}% |"
         )
 
     worst = sorted(
@@ -124,16 +140,6 @@ def render_report(results: list[EvalResult], mode: str, generated_at: datetime, 
             for verdict in broken:
                 shown = "；".join(failure.message for failure in verdict.failures[:3])
                 lines.append(f"- **{verdict.case_id}**：{shown}")
-
-    judged = [result for result in results if result.judge]
-    if judged:
-        lines += ["", "## 评审意见（LLM-as-judge）", ""]
-        for result in judged:
-            verdict = result.judge or {}
-            issues = "；".join(verdict.get("issues") or []) or "无"
-            lines.append(
-                f"- **{result.case.id}** {verdict.get('score')}/5 — {verdict.get('rationale') or ''}（问题：{issues}）"
-            )
 
     lines.append("")
     return "\n".join(lines)

@@ -27,7 +27,19 @@ def city_center(city: str) -> Location:
     return CITY_CENTERS.get(city, DEFAULT_CITY_CENTER)
 
 
-def sample_attractions(city: str, preferences: str, center: Location | None = None) -> list[Attraction]:
+def sample_attractions(
+    city: str,
+    preferences: str,
+    center: Location | None = None,
+    count: int | None = None,
+) -> list[Attraction]:
+    """Offline preview data.
+
+    ``count`` scales with trip length: six templates fill a weekend and leave a
+    two-week trip with empty days, which made the offline path unable to produce a
+    usable plan for exactly the trips the pipeline is longest on. Repeats get a
+    suffix so every name and address stays distinct.
+    """
     center = center or city_center(city)
     templates = [
         ("城市博物馆", "适合了解城市历史脉络与文化背景", "历史文化", 60, 120, 4.7),
@@ -37,29 +49,35 @@ def sample_attractions(city: str, preferences: str, center: Location | None = No
         ("观景台", "适合俯瞰城市天际线", "城市地标", 120, 80, 4.3),
         ("特色市集", "适合购买伴手礼和体验本地烟火气", "美食购物", 30, 90, 4.2),
     ]
+    wanted = max(len(templates), count or 0)
     # These records deliberately remain generic. They are offline preview data,
     # not actual venues, and must never be represented as booking/navigation data.
-    return [
-        Attraction(
-            name=f"{city}{name}",
-            address=f"{city}核心游览区 {index + 1} 号",
-            location=Location(
-                longitude=round(center.longitude + (index - 2) * 0.018, 6),
-                latitude=round(center.latitude + ((index % 3) - 1) * 0.012, 6),
-            ),
-            visit_duration=duration,
-            # A static template must not claim to have honoured a preference
-            # ("带儿童出行", "无障碍设施"), so the description carries no echo of the
-            # request. The eval's preference metric ignores this field for the
-            # same reason: prose is not evidence about the place.
-            description=f"{description}。（演示数据，未按个人偏好筛选）",
-            category=category,
-            rating=rating,
-            ticket_price=price,
-            source="sample",
+    attractions: list[Attraction] = []
+    for index in range(wanted):
+        name, description, category, price, duration, rating = templates[index % len(templates)]
+        round_number = index // len(templates)
+        suffix = f"·{round_number + 1}" if round_number else ""
+        attractions.append(
+            Attraction(
+                name=f"{city}{name}{suffix}",
+                address=f"{city}核心游览区 {index + 1} 号",
+                location=Location(
+                    longitude=round(center.longitude + ((index % 6) - 2) * 0.018, 6),
+                    latitude=round(center.latitude + ((index % 3) - 1) * 0.012, 6),
+                ),
+                visit_duration=duration,
+                # A static template must not claim to have honoured a preference
+                # ("带儿童出行", "无障碍设施"), so the description carries no echo of the
+                # request. The eval's preference metric ignores this field for the
+                # same reason: prose is not evidence about the place.
+                description=f"{description}。（演示数据，未按个人偏好筛选）",
+                category=category,
+                rating=rating,
+                ticket_price=price,
+                source="sample",
+            )
         )
-        for index, (name, description, category, price, duration, rating) in enumerate(templates)
-    ]
+    return attractions
 
 
 def sample_hotels(city: str, accommodation: str, budget: str) -> list[Hotel]:

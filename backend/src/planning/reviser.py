@@ -5,11 +5,11 @@ drop or add on which day — and every derived field (order, budget,
 routes, score) is recomputed here from the data layer.
 """
 
-import json
 import logging
 
 from src.model.schemas import DayEdit, DayPlan, PlanPatch, TripPlan, TripPlanRequest
 from src.planning.budget import calculate_budget
+from src.planning.candidates import attraction_lines, hotel_lines
 from src.planning.contracts import CandidatePlaces
 from src.planning.notices import attach_data_notices
 from src.planning.scheduler import optimise_order
@@ -41,6 +41,7 @@ class PlanReviser:
             _user_prompt(request, plan, candidates, instruction),
             prompt_version=PROMPT_VERSION,
             validate=_build_validator(plan, candidates),
+            response_schema=PlanPatch,
         )
         patch: PlanPatch = generation.value
         log_event(
@@ -118,7 +119,7 @@ class PlanReviser:
             degraded_reason=plan.degraded_reason,
         )
         revised.budget = calculate_budget(days, request)
-        return attach_data_notices(revised)
+        return attach_data_notices(revised, request)
 
 
 def _system_prompt() -> str:
@@ -133,7 +134,8 @@ def _system_prompt() -> str:
         "3. hotel 如不修改则省略该字段；\n"
         "4. 每天最终保留 1-3 个景点，不要全部删掉；\n"
         "5. description 只写活动类型、片区和节奏，不要出现任何具体场所名称；\n"
-        "6. 不要输出坐标、价格或 Markdown；reply 用中文，不超过 40 字。"
+        "6. 新增景点要看候选行里的开放情况：写了当天闭馆的不要选；\n"
+        "7. 不要输出坐标、价格或 Markdown；reply 用中文，不超过 40 字。"
     )
 
 
@@ -143,6 +145,9 @@ def _user_prompt(
     candidates: CandidatePlaces,
     instruction: str,
 ) -> str:
+    anchor = next((day.hotel.location for day in plan.days if day.hotel and day.hotel.location), None)
+    attraction_block = "\n".join(attraction_lines(candidates.attractions, anchor)) or "（无）"
+    hotel_block = "\n".join(hotel_lines(candidates.hotels, anchor)) or "（无）"
     lines = [
         f"城市：{plan.city}",
         f"行程天数：{len(plan.days)}",
@@ -160,8 +165,8 @@ def _user_prompt(
         lines.append(f"- 第 {day.day_index + 1} 天（{day.date}）：景点 {attractions}；酒店 {hotel}")
     lines += [
         "",
-        f"候选景点：{json.dumps([item.name for item in candidates.attractions[:24]], ensure_ascii=False)}",
-        f"候选酒店：{json.dumps([item.name for item in candidates.hotels[:6]], ensure_ascii=False)}",
+        f"候选景点（名称 | 类型 | 门票 | 建议时长 | 开放情况 | 距酒店）：\n{attraction_block}",
+        f"候选酒店（名称 | 类型 | 房价 | 距酒店）：\n{hotel_block}",
     ]
     return "\n".join(lines)
 

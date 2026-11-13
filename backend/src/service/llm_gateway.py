@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -26,8 +26,10 @@ from openai import (
     RateLimitError,
 )
 from openai.types.chat import ChatCompletionMessageParam
+from pydantic import BaseModel
 
 from src.config import Settings
+from src.model.jsonschema import strict_json_schema
 from src.model.llm_profile import ModelProfile
 from src.service.llm import LLMClient, LLMCompletion
 from src.service.logging import log_event
@@ -44,10 +46,14 @@ _REPAIR_INSTRUCTION = (
 class LLMUnavailableError(Exception):
     """Raised when every profile has been exhausted."""
 
-    def __init__(self, reason: str, attempts: int = 0) -> None:
+    def __init__(self, reason: str, attempts: int = 0, detail: str = "") -> None:
         super().__init__(reason)
         self.reason = reason
         self.attempts = attempts
+        #: The last schema complaint, when the reason is ``schema_invalid``. The
+        #: planner reads it to learn *which* place it did not have, which is what
+        #: makes a bounded "go and find it" retry possible.
+        self.detail = detail
 
 
 @dataclass(slots=True)
@@ -65,6 +71,7 @@ class LLMGateway:
         self.settings = settings
         self.profiles: list[ModelProfile] = settings.model_profiles
         self._clients: dict[str, LLMClient] = {}
+        self._schema_cache: dict[tuple[str, str], dict] = {}
 
     async def generate_json(
         self,
@@ -73,7 +80,16 @@ class LLMGateway:
         *,
         prompt_version: str,
         validate: Callable[[dict], Any] | None = None,
+        response_schema: type[BaseModel] | None = None,
+        budget_seconds: float | None = None,
     ) -> LLMGeneration:
+        """One JSON answer, from the first profile that can produce a usable one.
+
+        ``response_schema`` asks for provider-enforced structured output when the
+        profile (or ``LLM_JSON_SCHEMA``) says the service supports it. Without it
+        the request falls back to ``json_object``, which only promises "this is
+        JSON" - the reason a repair round exists at all.
+        """
         if not self.settings.has_llm or not self.profiles:
             raise LLMUnavailableError("llm_disabled")
 
@@ -82,14 +98,18 @@ class LLMGateway:
             {"role": "user", "content": user_prompt},
         ]
         generation_started = perf_counter()
-        deadline = generation_started + self.settings.llm_total_budget_seconds
+        deadline = generation_started + (
+            budget_seconds if budget_seconds is not None else self.settings.llm_total_budget_seconds
+        )
         reasons: list[str] = []
         total_attempts = 0
+        last_detail = ""
 
         for profile in self.profiles:
             messages = base_messages
             repaired = False
             attempt = 0
+            schema = self._schema_for(profile, response_schema)
             while attempt < profile.max_retries + 1:
                 attempt += 1
                 total_attempts += 1
@@ -104,6 +124,7 @@ class LLMGateway:
                         messages=messages,
                         prompt_version=prompt_version,
                         reasons=reasons,
+                        schema=schema,
                     )
                 except _ProfileUnusable:
                     break
@@ -134,6 +155,7 @@ class LLMGateway:
                         value = validate(payload)
                     except Exception as exc:  # noqa: BLE001 - schema rejection drives the repair round
                         reasons.append("schema_invalid")
+                        last_detail = str(exc)[:300]
                         log_event(
                             logger,
                             "llm.validation_failed",
@@ -144,7 +166,10 @@ class LLMGateway:
                             error_type=type(exc).__name__,
                             error=str(exc),
                         )
-                        if repaired:
+                        if repaired or schema is not None:
+                            # With the schema enforced by the provider, a rejection
+                            # means our schema is wrong, so echoing the error back
+                            # cannot help - it only costs another call.
                             break
                         repaired = True
                         messages = _repair_messages(system_prompt, user_prompt, completion.content, str(exc))
@@ -192,7 +217,98 @@ class LLMGateway:
                 reason=reasons[-1] if reasons else "unknown",
             )
 
-        raise LLMUnavailableError(reasons[-1] if reasons else "no_profile", attempts=total_attempts)
+        raise LLMUnavailableError(
+            reasons[-1] if reasons else "no_profile",
+            attempts=total_attempts,
+            detail=last_detail,
+        )
+
+    async def generate_json_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        prompt_version: str,
+        validate: Callable[[dict], Any] | None = None,
+        response_schema: type[BaseModel] | None = None,
+        budget_seconds: float | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMGeneration:
+        """One streamed call on the primary profile.
+
+        Deliberately single-attempt: this path exists for the description phase,
+        where the user is already watching the page and a silent 30-second retry
+        helps nobody. The caller falls back to a plain sentence, not a replan.
+        """
+        if not self.settings.has_llm or not self.profiles:
+            raise LLMUnavailableError("llm_disabled")
+
+        profile = self.profiles[0]
+        schema = self._schema_for(profile, response_schema)
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        started = perf_counter()
+        try:
+            completion = await self._client(profile).stream(messages, on_delta=on_delta, schema=schema)
+        except APIStatusError as exc:
+            log_event(
+                logger,
+                "llm.stream_failed",
+                level=logging.WARNING,
+                profile=profile.name,
+                reason=f"http_{exc.status_code}",
+                error=str(exc),
+            )
+            raise LLMUnavailableError(f"http_{exc.status_code}", attempts=1) from exc
+        except Exception as exc:  # noqa: BLE001 - any transport failure means "no prose"
+            log_event(
+                logger,
+                "llm.stream_failed",
+                level=logging.WARNING,
+                profile=profile.name,
+                reason=type(exc).__name__,
+                error=str(exc),
+            )
+            raise LLMUnavailableError("stream_failed", attempts=1) from exc
+
+        payload, reason = _parse_payload(completion)
+        if payload is None:
+            raise LLMUnavailableError(reason, attempts=1)
+
+        value: Any = payload
+        if validate is not None:
+            try:
+                value = validate(payload)
+            except Exception as exc:  # noqa: BLE001 - a bad description is a fallback, not a crash
+                log_event(
+                    logger,
+                    "llm.stream_validation_failed",
+                    level=logging.WARNING,
+                    profile=profile.name,
+                    reason="schema_invalid",
+                    error=str(exc),
+                )
+                raise LLMUnavailableError("schema_invalid", attempts=1) from exc
+
+        elapsed_ms = round((perf_counter() - started) * 1000, 1)
+        log_event(
+            logger,
+            "llm.streamed",
+            profile=profile.name,
+            prompt_version=prompt_version,
+            content_chars=len(completion.content),
+            elapsed_ms=elapsed_ms,
+        )
+        return LLMGeneration(
+            payload=payload,
+            value=value,
+            profile=profile.name,
+            attempts=1,
+            repaired=False,
+            elapsed_ms=elapsed_ms,
+        )
 
     async def _attempt(
         self,
@@ -202,6 +318,7 @@ class LLMGateway:
         messages: list[ChatCompletionMessageParam],
         prompt_version: str,
         reasons: list[str],
+        schema: dict | None = None,
     ) -> LLMCompletion | None:
         log_event(
             logger,
@@ -210,10 +327,11 @@ class LLMGateway:
             profile=profile.name,
             attempt=attempt,
             prompt_version=prompt_version,
+            structured=schema is not None,
         )
         started = perf_counter()
         try:
-            return await self._client(profile).complete(messages)
+            return await self._client(profile).complete(messages, schema=schema)
         except RETRYABLE_ERRORS as exc:
             reason = _transport_reason(exc)
             reasons.append(reason)
@@ -263,6 +381,19 @@ class LLMGateway:
                 exc_info=True,
             )
             raise _ProfileUnusable(reason) from exc
+
+    def _schema_for(self, profile: ModelProfile, response_schema: type[BaseModel] | None) -> dict | None:
+        """The strict schema for this profile, or ``None`` to fall back to json_object."""
+        if response_schema is None:
+            return None
+        if not (self.settings.llm_json_schema or profile.supports_json_schema):
+            return None
+        key = (profile.name, response_schema.__name__)
+        cached = self._schema_cache.get(key)
+        if cached is None:
+            cached = strict_json_schema(response_schema)
+            self._schema_cache[key] = cached
+        return cached
 
     def _client(self, profile: ModelProfile) -> LLMClient:
         client = self._clients.get(profile.name)

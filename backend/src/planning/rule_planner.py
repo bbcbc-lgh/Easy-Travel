@@ -2,10 +2,11 @@ import logging
 from datetime import timedelta
 
 from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
+from src.planning import must_visit
 from src.planning.budget import calculate_budget
 from src.planning.contracts import CandidatePlaces
-from src.planning.density import DAILY_LOAD_LIMIT, attraction_load
-from src.planning.scheduler import build_days, enforce_load
+from src.planning.density import attraction_load, capacities_for
+from src.planning.scheduler import MAX_ATTRACTIONS_PER_DAY, build_days, enforce_load
 from src.service.logging import log_event
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,15 @@ class RulePlanner:
     ) -> TripPlan:
         hotel = candidates.hotels[0] if candidates.hotels else None
         anchor = hotel.location if hotel else None
-        groups = build_days(candidates.attractions, request.days, anchor)
-        groups = enforce_load(groups, attraction_load, DAILY_LOAD_LIMIT)
+        # A must-visit place must survive the capacity cut below, so it goes first
+        # and the rest of the pool is trimmed to what the days can hold.
+        ordered = _must_visit_first(request, candidates.attractions)
+        capacity_slots = request.days * MAX_ATTRACTIONS_PER_DAY
+        if len(ordered) > capacity_slots:
+            pinned = ordered[: len(request.must_visit)]
+            ordered = (pinned + ordered[len(pinned) :])[:capacity_slots]
+        groups = build_days(ordered, request.days, anchor)
+        groups = enforce_load(groups, attraction_load, capacities_for(request.days, request))
 
         days: list[DayPlan] = []
         for day_index, group in enumerate(groups):
@@ -67,3 +75,12 @@ class RulePlanner:
             feedback_applied=bool(feedback),
         )
         return plan
+
+
+def _must_visit_first(request: TripPlanRequest, attractions: list) -> list:
+    """Put the places the user insists on at the front of the pool."""
+    if not request.must_visit:
+        return list(attractions)
+    pinned = [item for item in attractions if any(must_visit.matches(query, item.name) for query in request.must_visit)]
+    rest = [item for item in attractions if item not in pinned]
+    return pinned + rest

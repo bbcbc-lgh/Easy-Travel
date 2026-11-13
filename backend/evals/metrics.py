@@ -18,16 +18,65 @@ HOTEL_NIGHTLY = {"青年旅舍": 120, "经济型酒店": 280, "舒适型酒店":
 TICKET_ALLOWANCE_DAILY = 60
 TRANSPORT_DAILY = {"公共交通": 45, "打车": 120, "自驾": 180}
 
-PREFERENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "历史文化": ("博物馆", "故居", "遗址", "古镇", "古街", "寺", "塔", "纪念馆", "文化", "版本馆", "运河"),
-    "自然风光": ("公园", "山", "湖", "湿地", "风景", "植物园", "溪", "岛", "森林"),
-    "美食": ("餐厅", "小吃", "美食", "食", "茶", "菜"),
-    "购物": ("购物", "商场", "市集", "市场", "商圈"),
-    "艺术": ("美术馆", "艺术", "展览", "剧场", "音乐"),
-    "休闲": ("公园", "茶", "咖啡", "慢行", "休闲", "广场"),
-    "亲子": ("动物园", "科技馆", "乐园", "海洋馆", "亲子"),
-    "摄影": ("观景", "塔", "日落", "夜景", "湖", "桥"),
+#: Which preference axes a *venue type* belongs to.
+#:
+#: This is the second half of the ADR-6 fix. The metric used to match keywords
+#: against ``name + category``, so a place called "博物馆奇妙夜主题乐园" scored as
+#: 历史文化 no matter what it actually is - the same "the name looks like it"
+#: defect that was removed from the preference metric for ``description``, still
+#: living one field over.
+#:
+#: Keys are type segments as AMap actually returns them. ``src.cli.poi_types``
+#: prints the real ones for a city, which is where these came from: the live data
+#: uses ``|`` for multi-valued segments ("博物馆|风景名胜") and carries types the
+#: first version of this table had never seen ("旅游景点", "商场", "世界遗产").
+CATEGORY_AXES: dict[str, frozenset[str]] = {
+    # AMap venue types
+    "博物馆": frozenset({"历史文化", "艺术"}),
+    "纪念馆": frozenset({"历史文化"}),
+    "美术馆": frozenset({"艺术", "历史文化"}),
+    "展览馆": frozenset({"艺术"}),
+    "科技馆": frozenset({"亲子"}),
+    "水族馆": frozenset({"亲子"}),
+    "动物园": frozenset({"亲子", "自然风光"}),
+    "游乐场": frozenset({"亲子"}),
+    "文物古迹": frozenset({"历史文化"}),
+    "寺庙道观": frozenset({"历史文化"}),
+    "遗址": frozenset({"历史文化"}),
+    "世界遗产": frozenset({"历史文化"}),
+    "红色景区": frozenset({"历史文化"}),
+    "风景名胜": frozenset({"自然风光"}),
+    "风景名胜相关": frozenset({"自然风光"}),
+    "公园广场": frozenset({"自然风光", "休闲"}),
+    "公园": frozenset({"自然风光", "休闲"}),
+    "植物园": frozenset({"自然风光"}),
+    "湖": frozenset({"自然风光"}),
+    "湿地": frozenset({"自然风光"}),
+    "城市广场": frozenset({"休闲", "摄影"}),
+    "观景台": frozenset({"摄影"}),
+    "购物中心": frozenset({"购物"}),
+    "商场": frozenset({"购物"}),
+    "商业街": frozenset({"购物"}),
+    "特色街区": frozenset({"购物", "休闲"}),
+    "市集": frozenset({"购物", "美食"}),
+    "美食街": frozenset({"美食"}),
+    # Offline sample labels
+    "历史文化": frozenset({"历史文化"}),
+    "自然风光": frozenset({"自然风光"}),
+    "城市漫游": frozenset({"休闲"}),
+    "艺术展览": frozenset({"艺术"}),
+    "城市地标": frozenset({"摄影"}),
+    "美食购物": frozenset({"美食", "购物"}),
 }
+
+#: Axes no venue *type* can express. A trip built around one of these cannot be
+#: scored on it, and the honest answer is "not measured", not 0%. Reported here so
+#: the gap is documented rather than silently averaged into the score.
+UNMEASURABLE_AXES: frozenset[str] = frozenset(
+    {
+        "摄影",  # AMap types a photo spot as 风景名胜/城市广场/观景台; intent is invisible
+    }
+)
 
 
 @dataclass(slots=True)
@@ -50,7 +99,7 @@ class CaseMetrics:
     day_structure_ok: bool = False
     price_estimated: int = 0
     price_unknown: int = 0
-    preference_hit_rate: float = 0.0
+    preference_hit_rate: float | None = None
     hours_known_rate: float = 0.0
     budget_total: int = 0
     reference_budget: int = 0
@@ -108,37 +157,51 @@ def hours_known_rate(plan: TripPlan) -> float:
     return sum(1 for item in items if item.opening_hours) / len(items)
 
 
-def preference_hit_rate(plan: TripPlan, request: TripPlanRequest) -> float:
-    """Share of stops whose *place identity* matches the requested preferences.
+def preference_hit_rate(plan: TripPlan, request: TripPlanRequest) -> float | None:
+    """Share of stops whose *venue type* satisfies the requested preferences.
 
-    Only ``name`` and ``category`` are inspected. ``description`` is deliberately
-    excluded: it is prose written by the model (or a template), so scoring it
-    measures how well the writer echoes the preference string back — the sample
-    data used to append "已结合你的偏好：{preferences}" to every record, which made
-    every case containing a literal keyword score 100% while "自然风光" (whose
-    keywords never appear in its own label) scored 17%. That is a measurement of
-    the writer, not of the itinerary.
+    Only ``category`` is inspected. ``name`` is deliberately excluded: it is a
+    label, and scoring it rewards places that happen to be called "博物馆…" rather
+    than places that are one. ``description`` was removed for the same reason in
+    ADR-6; this closes the other half.
+
+    Returns ``None`` - not ``0.0`` - when no stop carried a type that maps to any
+    preference axis. That is a measurement failure ("this plan cannot be scored on
+    preference"), and conflating it with "scored zero" would let the metric punish
+    a whole class of trips: a photography itinerary is made of 风景名胜 and
+    城市广场, and before this distinction every one of them read as 0%.
     """
     attractions = [item for day in plan.days for item in day.attractions]
     if not attractions:
-        return 0.0
+        return None
 
-    keywords: set[str] = set()
+    axes: set[str] = set()
     for label in _split_preferences(request.preferences):
-        if label in PREFERENCE_KEYWORDS:
-            keywords.update(PREFERENCE_KEYWORDS[label])
-        else:
-            keywords.add(label)
+        axes |= CATEGORY_AXES.get(label, frozenset({label}))
 
-    if not keywords:
-        return 0.0
+    if not axes:
+        return None
 
-    hits = 0
-    for item in attractions:
-        haystack = f"{item.name}{item.category}"
-        if any(keyword and keyword in haystack for keyword in keywords):
-            hits += 1
+    known = [_axes_for_category(item.category) for item in attractions]
+    if not any(known):
+        return None
+
+    hits = sum(1 for item_axes in known if item_axes & axes)
     return hits / len(attractions)
+
+
+def _axes_for_category(category: str) -> set[str]:
+    """Preference axes implied by the venue's type.
+
+    A segment may itself be multi-valued: AMap returns ``"博物馆|风景名胜"``, so
+    splitting on ``;`` alone left whole attractions unmapped and silently scored 0.
+    """
+    found: set[str] = set()
+    for group in (category or "").replace("|", ";").split(";"):
+        key = group.strip()
+        if key in CATEGORY_AXES:
+            found |= set(CATEGORY_AXES[key])
+    return found
 
 
 def reference_budget(request: TripPlanRequest) -> int:
@@ -159,11 +222,12 @@ def budget_deviation(plan: TripPlan, request: TripPlanRequest) -> float:
 
 
 def composite_score(metrics: CaseMetrics, offline: bool = False) -> float:
-    """0-100.
+    """0-100, renormalised over whatever was actually measured.
 
-    When offline, every plan is produced by the deterministic planner, so the
-    "was a model used" component is dropped and the remaining weights are
-    renormalised; otherwise it would cap every score at 90 by construction.
+    Two components can be missing: "was a model used" (offline runs) and
+    "preference fit" (plans whose venue types map to no preference axis). Dropping
+    the weight and renormalising is the only honest option - scoring a missing
+    component as 0 would make an unmeasurable trip look like a bad one.
     """
     geo = 1 / (1 + metrics.avg_intra_day_km / 10)
     constraint = (
@@ -172,20 +236,28 @@ def composite_score(metrics: CaseMetrics, offline: bool = False) -> float:
         # must not be able to score full marks on the constraint axis.
         + (1.0 if metrics.duplicate_attractions == 0 else 0.0)
     ) / 2
-    preference = metrics.preference_hit_rate
     budget = 1 / (1 + metrics.budget_deviation)
 
-    if offline:
-        total = 0.34 * geo + 0.28 * constraint + 0.22 * preference + 0.16 * budget
-    else:
-        model = 0.0 if metrics.degraded else 1.0
-        total = 0.30 * geo + 0.25 * constraint + 0.20 * preference + 0.15 * budget + 0.10 * model
-    return round(total * 100, 1)
+    parts: list[tuple[float | None, float]] = [
+        (geo, 0.34 if offline else 0.30),
+        (constraint, 0.28 if offline else 0.25),
+        (metrics.preference_hit_rate, 0.22 if offline else 0.20),
+        (budget, 0.16 if offline else 0.15),
+    ]
+    if not offline:
+        parts.append((0.0 if metrics.degraded else 1.0, 0.10))
+
+    available = [(value, weight) for value, weight in parts if value is not None]
+    total_weight = sum(weight for _, weight in available)
+    if total_weight == 0:  # pragma: no cover - every component is None
+        return 0.0
+    return round(sum(value * weight for value, weight in available) / total_weight * 100, 1)
 
 
 def measure(case_id: str, plan: TripPlan, request: TripPlanRequest, offline: bool = False) -> CaseMetrics:
     distances = intra_day_distances(plan)
     estimated, unknown = price_counts(plan)
+    preference = preference_hit_rate(plan, request)
     metrics = CaseMetrics(
         case_id=case_id,
         days=len(plan.days),
@@ -196,7 +268,7 @@ def measure(case_id: str, plan: TripPlan, request: TripPlanRequest, offline: boo
         day_structure_ok=day_structure_ok(plan, request),
         price_estimated=estimated,
         price_unknown=unknown,
-        preference_hit_rate=round(preference_hit_rate(plan, request), 2),
+        preference_hit_rate=None if preference is None else round(preference, 2),
         hours_known_rate=round(hours_known_rate(plan), 2),
         budget_total=plan.budget.total if plan.budget else 0,
         reference_budget=reference_budget(request),

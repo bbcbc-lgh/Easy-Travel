@@ -19,6 +19,9 @@ from src.model.schemas import (
     TripPlanRequest,
     WeatherInfo,
 )
+from src.planning.density import HEAVY_LOAD, attraction_load
+from src.planning.must_visit import matches as _same_place
+from src.planning.must_visit import normalize as _normalize_place
 from src.service.cache import TTLCache
 from src.service.logging import log_event
 from src.service.qweather import QWeatherService
@@ -30,6 +33,10 @@ logger = logging.getLogger(__name__)
 # page roughly doubles the pool without touching the 8 s search budget.
 MAX_POI_PAGES = 2
 POI_PAGE_SIZE = 20
+#: Base budget for one keyword sweep. Longer trips need more pages, so the caller
+#: scales it up (see `_search_attractions_uncached`); a fixed 8s cut long trips off
+#: mid-way and left them with too few candidates to plan.
+POI_SEARCH_TIMEOUT_SECONDS = 8.0
 
 # Scenic-ish POI types: 风景名胜 / 公园广场 / 旅游景点 / 科教文化 / 博物馆.
 ATTRACTION_TYPES = "110000|110100|110200|140000|140100"
@@ -44,6 +51,26 @@ SHOPPING_CATEGORY_TERMS = ("购物中心", "商场", "百货", "商业街")
 # malls swapped one monotony for another: a real run returned five malls over three
 # days and nothing else.
 SHOPPING_CANDIDATE_SHARE = 0.4
+
+#: A pool that is mostly heavy venues cannot produce a good itinerary no matter
+#: how well the model chooses. When the user asked for nature or a relaxed pace,
+#: a museum-dominated candidate list is topped up with parks instead.
+_HEAVY_SHARE_TRIGGER = 0.6
+_NATURE_PREFERENCES = ("自然风光", "休闲", "摄影")
+_PARK_TYPES = "110100|110101"
+_DIVERSITY_TOP_UP = 3
+
+
+class MustVisitNotFound(Exception):
+    """A place the user insists on could not be found in the live data.
+
+    Raised instead of silently returning a plan without it: "I asked for the
+    Forbidden City and got a park" is worse than a clear 422.
+    """
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__("must-visit place(s) not found: " + ", ".join(names))
+        self.names = names
 
 
 class AMapService:
@@ -67,7 +94,7 @@ class AMapService:
             self._cache.set(key, value)
 
     async def search_attractions(self, request: TripPlanRequest) -> list[Attraction]:
-        cache_key = ("attractions", request.city, request.preferences, request.days)
+        cache_key = ("attractions", request.city, request.preferences, request.days, tuple(request.must_visit))
         cached = self._cache_get(cache_key)
         if cached is not None:
             return [item.model_copy(deep=True) for item in cached]
@@ -77,7 +104,26 @@ class AMapService:
 
     async def _search_attractions_uncached(self, request: TripPlanRequest) -> list[Attraction]:
         if not self.settings.has_amap:
-            return sample_attractions(request.city, request.preferences)
+            return sample_attractions(
+                request.city,
+                request.preferences,
+                count=self._target_attraction_count(request.days),
+            )
+
+        pinned = await self._search_must_visit(request)
+        if len(pinned) < len(request.must_visit):
+            found = "、".join(item.name for item in pinned)
+            missing = [name for name in request.must_visit if not any(_same_place(name, item.name) for item in pinned)]
+            log_event(
+                logger,
+                "amap.must_visit_missing",
+                level=logging.WARNING,
+                city=request.city,
+                requested=request.must_visit,
+                missing=missing,
+                found=found,
+            )
+            raise MustVisitNotFound(missing)
 
         target_count = self._target_attraction_count(request.days)
         try:
@@ -86,6 +132,7 @@ class AMapService:
                 keywords=self._build_attraction_keywords(request),
                 types=self._attraction_types(request),
                 target_count=target_count * 2,
+                timeout_seconds=min(POI_SEARCH_TIMEOUT_SECONDS + request.days, 20.0),
             )
         except httpx.HTTPError as exc:
             log_event(
@@ -113,39 +160,209 @@ class AMapService:
             normalized_name = self._normalize_name(name)
             if normalized_name in seen_names:
                 continue
-            location = self._poi_location(poi)
-            if location is None:
-                continue
             category = AMapService._poi_category(poi) or "景点"
             if "购物服务" in category:
                 # Malls are welcome, but not at the price of an all-mall trip.
                 if shopping_taken >= shopping_cap:
                     continue
                 shopping_taken += 1
+            attraction = self._to_attraction(poi, request)
+            if attraction is None:
+                continue
             seen_names.add(normalized_name)
-            ticket_price, price_source = self._ticket_price(category)
-            attractions.append(
-                Attraction(
-                    name=name,
-                    address=self._poi_address(poi, request.city),
-                    location=location,
-                    visit_duration=self._estimate_visit_duration(category, name),
-                    description=self._poi_description(name, request.city, request.preferences, category),
-                    category=category,
-                    rating=self._poi_rating(poi),
-                    image_url=self._poi_photo(poi),
-                    ticket_price=ticket_price,
-                    price_source=price_source,
-                    opening_hours=self._opening_hours(poi),
-                    contact_phone=self._poi_phone(poi),
-                    level=self._poi_level(poi),
-                    source="amap",
-                )
-            )
+            attractions.append(attraction)
             if len(attractions) >= target_count:
                 break
 
-        return attractions or await self._fallback_attractions(request)
+        if attractions:
+            merged = _merge_by_name(pinned, attractions)
+            return await self._top_up_diversity(request, merged)
+
+        if pinned:
+            return pinned
+
+        return await self._fallback_attractions(request)
+
+    async def search_by_name(self, name: str, request: TripPlanRequest) -> list[Attraction]:
+        """Look up one place by name. The bound on the planner's retrieval retry.
+
+        When the model names a stop the candidate pool did not contain, this is how
+        that place can still be fetched instead of the whole trip degrading. It
+        returns at most a few matches and never invents one.
+        """
+        try:
+            pois = await self._search_pois(
+                city=request.city,
+                keywords=[name],
+                types=self._attraction_types(request),
+                target_count=3,
+            )
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.lookup_failed",
+                level=logging.DEBUG,
+                city=request.city,
+                name=name,
+                error=str(exc),
+            )
+            return []
+        found: list[Attraction] = []
+        for poi in pois:
+            if not self._is_attraction_poi(poi, allow_shopping=self._wants_shopping(request)):
+                continue
+            item = self._to_attraction(poi, request)
+            if item is not None:
+                found.append(item)
+        return found
+
+    async def _search_must_visit(self, request: TripPlanRequest) -> list[Attraction]:
+        """Look each must-visit place up by name and keep the best match.
+
+        Searched one name at a time on purpose: the keyword endpoint ranks by
+        relevance to the whole query, so batching several place names returns
+        results for whichever one the index likes best.
+        """
+        found: list[Attraction] = []
+        for name in request.must_visit:
+            try:
+                pois = await self._search_pois(
+                    city=request.city,
+                    keywords=[name],
+                    types=self._attraction_types(request),
+                    target_count=3,
+                )
+            except httpx.HTTPError as exc:
+                log_event(
+                    logger,
+                    "amap.must_visit_search_failed",
+                    level=logging.WARNING,
+                    city=request.city,
+                    name=name,
+                    error=str(exc),
+                )
+                continue
+            best = self._pick_must_visit(pois, name, request)
+            if best is not None:
+                found.append(best)
+        return found
+
+    def _pick_must_visit(self, pois: list[dict[str, Any]], name: str, request: TripPlanRequest) -> Attraction | None:
+        """The POI that *is* the place asked for, never merely a search hit.
+
+        A near-miss is not good enough here: "I asked for the museum and got a
+        shopping street" is exactly the failure a must-visit list exists to
+        prevent, so a non-matching result is treated as "not found" (422) rather
+        than silently substituted.
+        """
+        fallback: Attraction | None = None
+        for poi in pois:
+            if not self._is_attraction_poi(poi, allow_shopping=self._wants_shopping(request)):
+                continue
+            item = self._to_attraction(poi, request)
+            if item is None:
+                continue
+            if not _same_place(name, item.name):
+                continue
+            if self._normalize_name(name) == self._normalize_name(item.name):
+                return item
+            fallback = fallback or item
+        return fallback
+
+    def _to_attraction(self, poi: dict[str, Any], request: TripPlanRequest) -> Attraction | None:
+        """Map one AMap POI to an :class:`Attraction`, or ``None`` if it is unusable.
+
+        Kept separate from the search loop so the diversity top-up below builds
+        records the same way instead of duplicating forty field mappings.
+        """
+        name = self._text(poi.get("name"), "未命名景点")
+        location = self._poi_location(poi)
+        if not name or location is None:
+            return None
+        category = AMapService._poi_category(poi) or "景点"
+        ticket_price, price_source = self._ticket_price(category)
+        return Attraction(
+            name=name,
+            address=self._poi_address(poi, request.city),
+            location=location,
+            visit_duration=self._estimate_visit_duration(category, name),
+            description=self._poi_description(name, request.city, request.preferences, category),
+            category=category,
+            rating=self._poi_rating(poi),
+            image_url=self._poi_photo(poi),
+            ticket_price=ticket_price,
+            price_source=price_source,
+            opening_hours=self._opening_hours(poi),
+            contact_phone=self._poi_phone(poi),
+            level=self._poi_level(poi),
+            source="amap",
+        )
+
+    async def _top_up_diversity(
+        self,
+        request: TripPlanRequest,
+        attractions: list[Attraction],
+    ) -> list[Attraction]:
+        """Add a few light stops when the pool is dominated by heavy venues.
+
+        This does not second-guess the model: it only makes sure the pool contains
+        the kind of place the user asked for. A city whose first keyword happens to
+        be "博物馆" otherwise offers nothing but museums, and no amount of clever
+        choosing fixes a candidate set that contains no parks.
+        """
+        if len(attractions) < 3:
+            return attractions
+        heavy = sum(1 for item in attractions if attraction_load(item) >= HEAVY_LOAD)
+        if heavy / len(attractions) <= _HEAVY_SHARE_TRIGGER:
+            return attractions
+        if not any(term in request.preferences for term in _NATURE_PREFERENCES):
+            return attractions
+
+        try:
+            pois = await self._search_pois(
+                city=request.city,
+                keywords=["公园", "湖"],
+                types=_PARK_TYPES,
+                target_count=_DIVERSITY_TOP_UP * 2,
+            )
+        except httpx.HTTPError as exc:
+            log_event(
+                logger,
+                "amap.diversity_top_up_failed",
+                level=logging.DEBUG,
+                reason=type(exc).__name__,
+                city=request.city,
+                error=str(exc),
+            )
+            return attractions
+
+        seen = {self._normalize_name(item.name) for item in attractions}
+        added = 0
+        for poi in pois:
+            if not self._is_attraction_poi(poi):
+                continue
+            item = self._to_attraction(poi, request)
+            if item is None:
+                continue
+            key = self._normalize_name(item.name)
+            if key in seen:
+                continue
+            seen.add(key)
+            attractions.append(item)
+            added += 1
+            if added >= _DIVERSITY_TOP_UP:
+                break
+
+        if added:
+            log_event(
+                logger,
+                "amap.diversity_top_up",
+                city=request.city,
+                heavy=heavy,
+                total_before=len(attractions) - added,
+                added=added,
+            )
+        return attractions
 
     async def search_hotels(self, request: TripPlanRequest) -> list[Hotel]:
         cache_key = ("hotels", request.city, request.accommodation, request.budget)
@@ -448,6 +665,7 @@ class AMapService:
         keywords: Iterable[str],
         types: str,
         target_count: int,
+        timeout_seconds: float | None = None,
     ) -> list[dict[str, Any]]:
         pois: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -456,8 +674,9 @@ class AMapService:
         # the target by itself and the rest are never searched - which is how a
         # shopping trip came back with nothing but malls.
         per_keyword = max(3, -(-target_count // max(1, len(keyword_list))))
+        budget = POI_SEARCH_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
         try:
-            async with asyncio.timeout(8):
+            async with asyncio.timeout(budget):
                 for keyword in keyword_list:
                     from_keyword = 0
                     page = 1
@@ -551,7 +770,12 @@ class AMapService:
                     city=request.city,
                 )
                 center = None
-        return sample_attractions(request.city, request.preferences, center=center)
+        return sample_attractions(
+            request.city,
+            request.preferences,
+            center=center,
+            count=self._target_attraction_count(request.days),
+        )
 
     async def _city_location(self, city: str) -> Location | None:
         district = await self._city_district(city)
@@ -668,7 +892,14 @@ class AMapService:
 
     @staticmethod
     def _target_attraction_count(days: int) -> int:
-        return max(8, min(16, days * 3))
+        """How many candidates a trip of this length needs.
+
+        The old ceiling of 16 was fine for a 3-day trip and starving for a 14-day
+        one: with fewer candidates than days, the model has to invent a place or
+        repeat one, and the validator rejects both - so the trip degraded to the
+        rule engine. Three per day, capped where the extra pages stop paying off.
+        """
+        return max(8, min(45, days * 3))
 
     @staticmethod
     def _is_meal_preference(preference: str) -> bool:
@@ -953,3 +1184,16 @@ class AMapService:
             duration_minutes=duration,
             mode=mode,
         )
+
+
+def _merge_by_name(primary: list[Attraction], secondary: list[Attraction]) -> list[Attraction]:
+    """Primary first (must-visit places), then secondary minus anything already there."""
+    merged = list(primary)
+    seen = {_normalize_place(item.name) for item in primary}
+    for item in secondary:
+        key = _normalize_place(item.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged

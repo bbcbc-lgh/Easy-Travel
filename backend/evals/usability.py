@@ -15,7 +15,7 @@ from datetime import date
 
 from src.model.schemas import DayPlan, TripPlan, TripPlanRequest
 from src.planning.critic import DAILY_ATTRACTION_LIMIT_MINUTES, DAY_TRAVEL_LIMIT_METERS
-from src.planning.density import DAILY_LOAD_LIMIT, day_load
+from src.planning.density import capacities_for, day_load
 from src.planning.hours import is_closed_on, weekday_name
 from src.planning.scheduler import haversine_meters
 
@@ -35,7 +35,7 @@ RULES: tuple[Rule, ...] = (
     Rule("day_load", "单日强度不超过建议上限"),
     Rule("open_on_the_day", "当天没有闭馆地点"),
     Rule("no_duplicates", "没有重复景点"),
-    Rule("description_is_stable", "说明不与景点名绑定"),
+    Rule("description_is_scoped", "说明只提当天的景点"),
 )
 
 RULE_BY_KEY = {rule.key: rule for rule in RULES}
@@ -80,6 +80,7 @@ def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsabil
     """Every rule the plan breaks, in reading order. Empty list means usable."""
     case = CaseUsability(case_id=case_id)
     failures = case.failures
+    capacities = capacities_for(len(plan.days), request)
 
     for day in plan.days:
         label = day.day_index + 1
@@ -106,8 +107,9 @@ def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsabil
             )
 
         load = day_load(day)
-        if load > DAILY_LOAD_LIMIT:
-            failures.append(Failure("day_load", f"第 {label} 天强度 {load:.1f}（上限 {DAILY_LOAD_LIMIT}）"))
+        capacity = capacities[day.day_index] if day.day_index < len(capacities) else capacities[-1]
+        if load > capacity:
+            failures.append(Failure("day_load", f"第 {label} 天强度 {load:.1f}（上限 {capacity}）"))
 
         try:
             weekday = date.fromisoformat(day.date).weekday()
@@ -122,14 +124,20 @@ def assess(plan: TripPlan, request: TripPlanRequest, case_id: str) -> CaseUsabil
                     )
                 )
 
+    # A description may name its own day's stops - that is what makes it read like
+    # a plan rather than a template. What it must never do is name a stop that
+    # belongs to another day, which is the shape of the original bug: prose written
+    # before trimming kept describing a place the itinerary no longer visited.
+    stops_by_day = {day.day_index: [item.name for item in day.attractions] for day in plan.days}
     for day in plan.days:
-        named = _named_stops(day)
-        if named:
+        leaked = _names_from_other_days(day, stops_by_day)
+        if leaked:
             label = day.day_index + 1
+            owner, name = leaked[0]
             failures.append(
                 Failure(
-                    "description_is_stable",
-                    f"第 {label} 天的说明写到了具体场所（{'、'.join(named)}），行程一变就会自相矛盾",
+                    "description_is_scoped",
+                    f"第 {label} 天的说明提到了第 {owner + 1} 天的「{name}」，行程一变就会自相矛盾",
                 )
             )
 
@@ -160,12 +168,24 @@ def summarise(results: list[CaseUsability]) -> UsabilitySummary:
     )
 
 
-def _named_stops(day: DayPlan) -> list[str]:
-    """Stops whose name appears in the day's own description."""
+def _names_from_other_days(day: DayPlan, stops_by_day: dict[int, list[str]]) -> list[tuple[int, str]]:
+    """Stops that belong to another day but are named in this day's description.
+
+    This day's own stop names are stripped first: "天安门广场" on this day contains
+    "天安门" from another day, and flagging that would fail a correct plan.
+    """
     haystack = "".join(day.description.split())
-    found: list[str] = []
-    for item in day.attractions:
-        key = "".join(item.name.split())
-        if len(key) >= 2 and key in haystack and item.name not in found:
-            found.append(item.name)
+    for name in stops_by_day.get(day.day_index, []):
+        key = "".join(name.split())
+        if len(key) >= 2:
+            haystack = haystack.replace(key, "")
+
+    found: list[tuple[int, str]] = []
+    for day_index, names in stops_by_day.items():
+        if day_index == day.day_index:
+            continue
+        for name in names:
+            key = "".join(name.split())
+            if len(key) >= 2 and key in haystack and (day_index, name) not in found:
+                found.append((day_index, name))
     return found

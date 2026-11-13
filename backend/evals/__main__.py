@@ -1,7 +1,7 @@
 """Command line entry point.
 
 python -m evals --mode sample --limit 5
-python -m evals --mode live --judge --limit 3
+python -m evals --mode live --limit 5 --min-usable-ratio 0.8
 """
 
 import argparse
@@ -13,6 +13,7 @@ from evals.gates import summarise, violations
 from evals.report import render_report
 from evals.runner import EvalResult, build_pipeline, load_cases, run_all
 from evals.usability import RULES
+from src.config import settings
 from src.service.logging import configure_logging
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +23,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run EasyTravel itinerary evals")
     parser.add_argument("--mode", choices=["sample", "live"], default="sample")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N cases")
-    parser.add_argument("--judge", action="store_true", help="also run the LLM-as-judge pass (live mode)")
+    parser.add_argument(
+        "--ids",
+        default=None,
+        help="comma-separated case ids to run (e.g. long-xa-14,long-bj-7)",
+    )
     parser.add_argument("--out", type=Path, default=None, help="report path")
     # Thresholds. Omitted means "just report"; CI passes them explicitly.
     parser.add_argument("--min-score", type=float, default=None, help="fail when the mean score is below this")
@@ -39,12 +44,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="fail when fewer than this share of plans could be followed as written",
     )
+    # An eval run is also a measurement of the planner: with INFO logging and
+    # LOG_FORMAT=json, its stdout can be fed straight into src.cli.quality_report.
+    # The default stays ERROR so a normal run prints only the report.
+    parser.add_argument(
+        "--log-level",
+        default="ERROR",
+        help="log level for the pipeline (INFO makes completion/retry events visible)",
+    )
     return parser.parse_args(argv)
 
 
 async def _main(args: argparse.Namespace) -> int:
-    configure_logging(level="ERROR")
-    cases = load_cases(limit=args.limit)
+    configure_logging(level=args.log_level, fmt=settings.log_format)
+    cases = load_cases(
+        limit=args.limit,
+        ids=[item.strip() for item in args.ids.split(",") if item.strip()] if args.ids else None,
+    )
     if not cases:
         print("no eval cases found")
         return 1
@@ -54,18 +70,16 @@ async def _main(args: argparse.Namespace) -> int:
     results: list[EvalResult] = []
 
     def on_progress(result: EvalResult, index: int, total: int) -> None:
-        judge = f" judge={result.judge['score']}" if result.judge else ""
         error = f" error={result.error}" if result.error else ""
         print(
             f"[{index + 1}/{total}] {result.case.id:<14} "
             f"score={result.metrics.score:5.1f} geo={result.metrics.avg_intra_day_km:5.1f}km "
-            f"degraded={result.metrics.degraded}{judge}{error}"
+            f"degraded={result.metrics.degraded}{error}"
         )
 
     results = await run_all(
         cases,
         pipeline,
-        use_judge=args.judge,
         offline=offline,
         on_progress=on_progress,
     )

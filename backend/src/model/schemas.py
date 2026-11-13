@@ -55,7 +55,10 @@ class Hotel(BaseModel):
 class Budget(BaseModel):
     total_attractions: int = Field(default=0, ge=0, description="景点门票总费用")
     total_hotels: int = Field(default=0, ge=0, description="酒店总费用")
-    total_meals: int = Field(default=0, ge=0, description="餐饮总费用")
+    #: Meals are no longer planned (the traveller decides on the ground), so this is
+    #: a per-day allowance multiplied out - not a sum over chosen restaurants. It is
+    #: kept in the payload because stored plans and the result page still read it.
+    total_meals: int = Field(default=0, ge=0, description="餐饮总费用（按档位估算，不参与规划）")
     total_transportation: int = Field(default=0, ge=0, description="交通总费用")
     total: int = Field(default=0, ge=0, description="总费用")
 
@@ -107,12 +110,52 @@ class PlanDecision(BaseModel):
     overall_suggestions: str | None = Field(default=None, description="整体建议")
 
 
+class PlanSkeletonDay(BaseModel):
+    """Phase 1 of two-phase planning: where to go, not what to say about it."""
+
+    day_index: int = Field(..., ge=0, description="第几天(从0开始)")
+    attractions: list[str] = Field(default_factory=list, description="只能取候选景点名称")
+    hotel: str | None = Field(default=None, description="只能取候选酒店名称")
+
+
+class PlanSkeleton(BaseModel):
+    """Just the route. Prose is written later, once the stops are final.
+
+    Splitting the two is what keeps a long trip from being truncated: fourteen days
+    of attractions *and* descriptions in one response runs into the output limit
+    and has to be retried whole. It also lets the descriptions name the stops,
+    because by the time they are written the trimming has already happened.
+    """
+
+    days: list[PlanSkeletonDay] = Field(default_factory=list, description="每日选择")
+    overall_suggestions: str | None = Field(default=None, description="整体建议")
+
+
+class DayDescription(BaseModel):
+    day_index: int = Field(..., ge=0, description="第几天(从0开始)")
+    description: str = Field(..., min_length=1, description="当日安排与节奏")
+
+
+class DayDescriptions(BaseModel):
+    """Phase 2: prose for days whose stops are already final."""
+
+    days: list[DayDescription] = Field(default_factory=list, description="每日说明")
+
+
 class RouteLeg(BaseModel):
     origin: str = Field(..., description="起点名称")
     destination: str = Field(..., description="终点名称")
     distance_meters: int = Field(default=0, ge=0, description="距离(米)")
     duration_minutes: int = Field(default=0, ge=0, description="耗时(分钟)")
     mode: str = Field(default="", description="交通方式")
+
+
+class TimelineSlot(BaseModel):
+    """One stop's place on the clock, once the order is final."""
+
+    start: str = Field(..., description="开始时间 HH:MM")
+    end: str = Field(..., description="结束时间 HH:MM")
+    name: str = Field(..., description="地点名称")
 
 
 class DayPlan(BaseModel):
@@ -124,6 +167,8 @@ class DayPlan(BaseModel):
     hotel: Hotel | None = Field(default=None, description="酒店信息")
     attractions: list[Attraction] = Field(default_factory=list, description="景点列表")
     routes: list[RouteLeg] = Field(default_factory=list, description="当日路线估算")
+    #: Optional so plans stored before timetables existed still load.
+    timeline: list[TimelineSlot] = Field(default_factory=list, description="当日时间轴")
 
 
 class WeatherInfo(BaseModel):
@@ -163,6 +208,41 @@ class TripPlanRequest(BaseModel):
     budget: Literal["经济", "中等", "舒适", "豪华"] = Field(default="中等", description="预算档位")
     transportation: str = Field(default="公共交通", max_length=50, description="交通方式")
     accommodation: str = Field(default="经济型酒店", max_length=50, description="住宿偏好")
+    #: Places the traveller insists on. Looked up by name against the live data
+    #: layer, then required to appear exactly once in the itinerary.
+    must_visit: list[str] = Field(default_factory=list, max_length=10, description="必去地点名称")
+    #: First day starts no earlier than this ("15:00" = an afternoon arrival), and
+    #: the last day ends at this time. Both optional: a local trip has neither.
+    arrival_time: str | None = Field(default=None, description="首日到达时间 HH:MM")
+    departure_time: str | None = Field(default=None, description="末日离开时间 HH:MM")
+
+    @field_validator("must_visit")
+    @classmethod
+    def clean_must_visit(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value:
+            name = item.strip()
+            if name and name not in cleaned:
+                cleaned.append(name[:50])
+        return cleaned
+
+    @field_validator("arrival_time", "departure_time")
+    @classmethod
+    def check_clock_time(cls, value: str | None) -> str | None:
+        """Reject silent garbage: a bad time would silently mean "no constraint"."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            hour, minute = cleaned.split(":", 1)
+            parsed = int(hour) * 60 + int(minute)
+        except ValueError as exc:
+            raise ValueError("time must look like HH:MM") from exc
+        if not 0 <= parsed < 24 * 60 or len(hour) != 2 or len(minute) != 2:
+            raise ValueError("time must look like HH:MM")
+        return cleaned
 
     @field_validator("city")
     @classmethod
@@ -195,7 +275,6 @@ class TripPlanRequest(BaseModel):
         uses this property instead of re-deriving that invariant (or asserting).
         """
         return self.end_date or self.start_date
-        return self
 
 
 class TripPlan(BaseModel):

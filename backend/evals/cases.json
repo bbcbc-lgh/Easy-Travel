@@ -22,5 +22,15 @@
   {"id": "sz-city-2", "city": "深圳", "start_date": "2026-12-21", "days": 2, "preferences": "购物、美食", "budget": "豪华", "transportation": "打车", "accommodation": "高端酒店"},
   {"id": "gy-nature-3", "city": "贵阳", "start_date": "2026-12-22", "days": 3, "preferences": "自然风光、休闲", "budget": "经济", "transportation": "公共交通", "accommodation": "经济型酒店"},
   {"id": "hrb-ice-2", "city": "哈尔滨", "start_date": "2026-12-23", "days": 2, "preferences": "摄影、亲子", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店"},
-  {"id": "gl-river-3", "city": "桂林", "start_date": "2026-12-24", "days": 3, "preferences": "自然风光", "budget": "舒适", "transportation": "打车", "accommodation": "舒适型酒店"}
+  {"id": "gl-river-3", "city": "桂林", "start_date": "2026-12-24", "days": 3, "preferences": "自然风光", "budget": "舒适", "transportation": "打车", "accommodation": "舒适型酒店"},
+  {"id": "long-bj-7", "city": "北京", "start_date": "2027-01-05", "days": 7, "preferences": "历史文化", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店"},
+  {"id": "long-cd-10", "city": "成都", "start_date": "2027-01-10", "days": 10, "preferences": "休闲、美食", "budget": "舒适", "transportation": "打车", "accommodation": "舒适型酒店"},
+  {"id": "long-xa-14", "city": "西安", "start_date": "2027-01-20", "days": 14, "preferences": "历史文化", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店"},
+  {"id": "long-hz-5", "city": "杭州", "start_date": "2027-02-02", "days": 5, "preferences": "自然风光、休闲", "budget": "舒适", "transportation": "打车", "accommodation": "舒适型酒店"},
+  {"id": "must-hz-2", "city": "杭州", "start_date": "2027-02-10", "days": 2, "preferences": "自然风光", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店", "must_visit": ["西湖"]},
+  {"id": "must-bj-2", "city": "北京", "start_date": "2027-02-12", "days": 2, "preferences": "历史文化", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店", "must_visit": ["故宫博物院", "天坛"]},
+  {"id": "must-sh-1", "city": "上海", "start_date": "2027-02-14", "days": 1, "preferences": "摄影", "budget": "舒适", "transportation": "打车", "accommodation": "舒适型酒店", "must_visit": ["外滩"]},
+  {"id": "arrive-bj-2", "city": "北京", "start_date": "2027-02-16", "days": 2, "preferences": "历史文化", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店", "arrival_time": "15:00"},
+  {"id": "depart-sh-2", "city": "上海", "start_date": "2027-02-18", "days": 2, "preferences": "自然风光", "budget": "中等", "transportation": "公共交通", "accommodation": "经济型酒店", "departure_time": "12:00"},
+  {"id": "short-cd-1", "city": "成都", "start_date": "2027-02-20", "days": 1, "preferences": "美食", "budget": "经济", "transportation": "公共交通", "accommodation": "青年旅舍"}
 ]
