@@ -9,5 +9,5 @@ pydantic==2.14.3
 pydantic-settings==2.16.2
 httpx==0.28.1
 python-dotenv==1.2.4
-openai==3.49.0
+openai==3.51.0
 langgraph==1.2.20
